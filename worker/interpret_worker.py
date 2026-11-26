@@ -151,12 +151,29 @@ def transcribe(audio_file: Path, mode: str) -> tuple[str, str]:
     elif mode == "id-ja":
         lang = "id"
     else:
-        # 日本語とインドネシア語の 2 つに絞って、確率の高いほうを選ぶ
+        # 使う言語は日本語とインドネシア語だけ。日本語ははっきり判定できる（0.99 前後）が、
+        # 日本人の発音のインドネシア語の短い言葉は、アイスランド語などと判定されることがある。
+        # そこで「日本語らしさ」だけで決め、どちらとも言えないときは両方で文字にして比べる。
         audio = whisper.pad_or_trim(whisper.load_audio(str(audio_file)))
         mel = whisper.log_mel_spectrogram(audio, n_mels=model.dims.n_mels).to(model.device)
         _, probs = model.detect_language(mel)
-        lang = "ja" if probs.get("ja", 0) >= probs.get("id", 0) else "id"
-        log(f"言語判定 ja={probs.get('ja', 0):.2f} id={probs.get('id', 0):.2f} → {lang}")
+        pj = probs.get("ja", 0)
+        top = max(probs, key=probs.get)
+        if pj >= 0.6:
+            lang = "ja"
+        elif pj <= 0.15:
+            lang = "id"
+        else:
+            tries = {}
+            for cand in ("ja", "id"):
+                r = model.transcribe(str(audio_file), language=cand, fp16=True, condition_on_previous_text=False)
+                segs = r.get("segments") or []
+                lp = sum(sg["avg_logprob"] for sg in segs) / max(1, len(segs))
+                tries[cand] = (lp, (r.get("text") or "").strip())
+            lang = "ja" if tries["ja"][0] >= tries["id"][0] else "id"
+            log(f"言語判定 ja={pj:.2f}（両方で比較 ja={tries['ja'][0]:.2f} id={tries['id'][0]:.2f}）→ {lang}")
+            return lang, tries[lang][1]
+        log(f"言語判定 ja={pj:.2f} 最有力={top} → {lang}")
     result = model.transcribe(str(audio_file), language=lang, fp16=True, condition_on_previous_text=False)
     return lang, (result.get("text") or "").strip()
 
