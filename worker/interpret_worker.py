@@ -28,6 +28,13 @@ import requests
 
 HERE = Path(__file__).resolve().parent
 
+# ログを UTF-8 で出す（コンソールやファイルへのリダイレクトで文字化けしないように）
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
 
 def load_env(path: Path) -> None:
     if not path.exists():
@@ -339,7 +346,8 @@ def process(job: dict) -> None:
 
 def fetch_jobs() -> list[dict]:
     # 受付中のもの＋5 分以上処理中のまま止まったもの（再起動など）
-    stale = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)).isoformat()
+    # URL に「+」を入れると空白として読まれるので、UTC の Z 表記にする
+    stale = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
     q = (
         "interpret_jobs?select=*&order=created_at.asc&limit=5"
         f"&or=(status.eq.queued,and(status.eq.processing,claimed_at.lt.{stale},attempts.lt.3))"
