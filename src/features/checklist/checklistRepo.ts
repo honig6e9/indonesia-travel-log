@@ -255,6 +255,7 @@ export interface ImportItem {
   category?: string;
   area?: string;
   plannedDate?: string | null;
+  plannedEndDate?: string | null;
   priority?: Priority;
   status?: ChecklistItem['status'];
   note?: string;
@@ -283,6 +284,7 @@ export function parseImportFile(text: string): { items: ImportItem[]; errors: st
     if (r.type !== 'task' && r.type !== 'food') return errors.push(`${where}：type は task か food`);
     if (!title || title.length > 200) return errors.push(`${where}：タイトルがないか長すぎます`);
     if (r.plannedDate != null && !(typeof r.plannedDate === 'string' && DATE_RE.test(r.plannedDate))) return errors.push(`${where}：予定日の形が違います`);
+    if (r.plannedEndDate != null && !(typeof r.plannedEndDate === 'string' && DATE_RE.test(r.plannedEndDate))) return errors.push(`${where}：終了日の形が違います`);
     if (r.priority != null && !['high', 'normal', 'low'].includes(r.priority as string)) return errors.push(`${where}：優先度の値が違います`);
     if (r.status != null && !['open', 'done', 'skipped'].includes(r.status as string)) return errors.push(`${where}：状態の値が違います`);
     const price = r.targetPrice == null ? null : Number(r.targetPrice);
@@ -295,6 +297,7 @@ export function parseImportFile(text: string): { items: ImportItem[]; errors: st
       category: str(r.category, 40) || undefined,
       area: str(r.area, 300),
       plannedDate: (r.plannedDate as string | null | undefined) ?? null,
+      plannedEndDate: (r.plannedEndDate as string | null | undefined) ?? null,
       priority: (r.priority as Priority | undefined) ?? 'normal',
       status: (r.status as ChecklistItem['status'] | undefined) ?? 'open',
       note: str(r.note, 4000),
@@ -323,6 +326,7 @@ export async function importItems(ctx: Ctx, tripId: string, items: ImportItem[])
         category: it.category ?? base.category,
         area: it.area ?? '',
         plannedDate: it.plannedDate ?? null,
+        plannedEndDate: it.plannedEndDate ?? null,
         priority: it.priority ?? 'normal',
         status: it.status ?? 'open',
         note: it.note ?? '',

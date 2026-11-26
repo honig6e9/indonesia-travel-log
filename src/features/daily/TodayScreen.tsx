@@ -18,6 +18,7 @@ import { NoteSheet } from '../notes/NoteSheet';
 import { blankNote, notesOn, saveNote } from '../notes/notesRepo';
 import { formatPosition, getCurrentPosition } from '../../lib/geo';
 import { SyncStatusLine } from '../sync/SyncStatus';
+import { formatPeriod, isOverdue, isPlannedOn, periodOf } from '../checklist/period';
 import { RatingsCard } from './RatingsCard';
 
 export function DateHeader() {
@@ -46,7 +47,7 @@ export function DateHeader() {
 }
 
 export function TodayScreen() {
-  const { db, ctx, trip, date, toast } = useApp();
+  const { db, ctx, trip, date, toast, today } = useApp();
   const [sheet, setSheet] = useState<null | { kind: 'note'; note?: Note } | { kind: 'expense'; expense?: Expense } | { kind: 'media'; media: Media }>(null);
 
   const diary = useLiveQuery(() => loadDiary(db, trip.id, date), [db, trip.id, date]);
@@ -60,7 +61,9 @@ export function TodayScreen() {
   const lastExternal = useLiveQuery(() => getSetting<string | null>(db, 'lastExternalSaveAt', null), [db]);
 
   // 今日のやること：予定日がこの日のもの＋この日に完了したもの。なければ未完了の上位
-  const todays = tasks.filter((t) => t.plannedDate === date || (t.status === 'done' && t.completedDate === date));
+  // 選んだ日が予定（期間）に入るもの＋その日に完了したもの
+  const todays = tasks.filter((t) => isPlannedOn(t, date) || (t.status === 'done' && t.completedDate === date));
+  const overdueCount = tasks.filter((t) => isOverdue(t, today)).length;
   const shownTasks = todays.length ? todays : tasks.filter((t) => t.status === 'open').sort((a, b) => prio(a) - prio(b)).slice(0, 3);
   const todayProg = progress(todays);
   const foodProg = progress(foods);
@@ -138,12 +141,17 @@ export function TodayScreen() {
         </div>
         <ul className="checklist">
           {shownTasks.map((t) => (
-            <CheckRow key={t.id} item={t} onToggle={toggle} />
+            <CheckRow key={t.id} item={t} onToggle={toggle} compact />
           ))}
         </ul>
         <div className="actions">
           <button className="btn small" onClick={() => navigate(`lists/task?add=1&date=${date}`)}>＋追加</button>
           <button className="btn small ghost" onClick={() => navigate('lists/task')}>すべて見る</button>
+          {overdueCount > 0 && (
+            <button className="btn small overdue-link" onClick={() => navigate('lists/task?f=overdue')}>
+              ⚠ 予定を過ぎた未完了 {overdueCount} 件
+            </button>
+          )}
         </div>
       </section>
 
@@ -227,10 +235,14 @@ export function TodayScreen() {
 
 const prio = (i: ChecklistItem) => (i.priority === 'high' ? 0 : i.priority === 'normal' ? 1 : 2);
 
-export function CheckRow(props: { item: ChecklistItem; onToggle: (i: ChecklistItem) => void; detail?: boolean }) {
+export function CheckRow(props: { item: ChecklistItem; onToggle: (i: ChecklistItem) => void; detail?: boolean; compact?: boolean }) {
+  const { today } = useApp();
   const i = props.item;
+  const period = periodOf(i);
+  const overdue = isOverdue(i, today);
+  const multi = !!period && period.end !== period.start;
   return (
-    <li className={'check-row ' + i.status}>
+    <li className={'check-row ' + i.status + (overdue ? ' overdue' : '')}>
       <button
         className="check"
         role="checkbox"
@@ -242,13 +254,22 @@ export function CheckRow(props: { item: ChecklistItem; onToggle: (i: ChecklistIt
       </button>
       <button className="check-title" onClick={() => navigate(`item/${i.id}`)}>
         <span>{i.title}</span>
+        {overdue && <span className="overdue-badge">予定を過ぎています（{formatPeriod(period!)}）</span>}
         {props.detail && (
           <span className="muted small">
-            {[i.localName, i.area, i.plannedDate && `予定 ${i.plannedDate}`, i.completedDate && `完了 ${i.completedDate}`, i.priority === 'high' && '優先度:高', i.status === 'skipped' && '見送り']
+            {[
+              i.localName,
+              i.area,
+              period && !overdue && `予定 ${formatPeriod(period)}`,
+              i.completedDate && `完了 ${i.completedDate}`,
+              i.priority === 'high' && '優先度:高',
+              i.status === 'skipped' && '見送り',
+            ]
               .filter(Boolean)
               .join('・')}
           </span>
         )}
+        {props.compact && multi && !overdue && <span className="muted small">期間 {formatPeriod(period!)}</span>}
       </button>
     </li>
   );

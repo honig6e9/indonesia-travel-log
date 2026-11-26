@@ -289,7 +289,7 @@ p { margin: 6px 0; }
 .live-text { font-size: 1.3rem; font-weight: 600; line-height: 1.4; margin: 0; padding: 8px 4px; }
 .bigcard-live { margin: 0; font-size: 1.2rem; font-weight: 600; color: #333; text-align: center; max-height: 25vh; overflow: auto; }
 /* 確かめる画面 */
-.check { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 8px 4px; }
+.bigcard-check { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 8px 4px; }
 .check-label { margin: 0; font-size: 0.95rem; color: #888; }
 .check-source { text-align: left; background: #f4f1ec; border: 1px dashed #c9bfb2; border-radius: 12px; padding: 12px; font-size: 1.7rem; font-weight: 700; line-height: 1.4; color: #111; cursor: pointer; }
 .check-source:disabled { color: #444; cursor: default; }
@@ -322,3 +322,9 @@ p { margin: 6px 0; }
 .interp-li .star.on { color: #e3a008; }
 .bigcard-icon.fav-on { color: #e3a008; }
 .file-btn { display: inline-flex; align-items: center; cursor: pointer; }
+/* 予定を過ぎた未完了 */
+.check-row.overdue .check-title > span:first-child { color: var(--danger); }
+.overdue-badge { font-size: 0.8rem; color: var(--danger); font-weight: 600; }
+.overdue-link { color: var(--danger); border-color: var(--danger); }
+.overdue-filter button { white-space: nowrap; }
+.overdue-filter { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--danger); font-size: 0.9rem; margin: 8px 0; }

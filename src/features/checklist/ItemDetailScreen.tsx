@@ -6,6 +6,7 @@ import { Empty, Field, Sheet, Stars, Thumb, VisibilitySelect, numOrNull } from '
 import { alive } from '../../db/repo';
 import type { ChecklistItem, Currency, FoodExperience, Media, Priority } from '../../db/types';
 import { formatMoney } from '../../lib/format';
+import { periodOf } from './period';
 import { MediaSheet } from '../media/MediaSheet';
 import { PhotoButton } from '../media/PhotoButton';
 import {
@@ -110,6 +111,15 @@ export function ItemDetailScreen(props: { id: string }) {
       <div className="row">
         <Field label="予定日">
           <input type="date" value={draft.plannedDate ?? ''} onChange={(e) => set({ plannedDate: e.target.value || null })} />
+        </Field>
+        <Field label="終了日（期間があるとき）">
+          <input
+            type="date"
+            value={draft.plannedEndDate ?? (periodOf(draft) && periodOf(draft)!.end !== draft.plannedDate ? periodOf(draft)!.end : '')}
+            min={draft.plannedDate ?? undefined}
+            disabled={!draft.plannedDate}
+            onChange={(e) => set({ plannedEndDate: e.target.value || null })}
+          />
         </Field>
         <Field label={isFood ? '食べた日' : '完了日'}>
           <input type="date" value={draft.completedDate ?? ''} disabled={item.status !== 'done'} onChange={(e) => set({ completedDate: e.target.value || null })} />

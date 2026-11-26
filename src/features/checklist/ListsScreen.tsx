@@ -8,19 +8,27 @@ import { percent } from '../../lib/format';
 import { CheckRow } from '../daily/TodayScreen';
 import { addItems, listItems, parseBulk, parseImportFile, progress, SAMPLE_FOODS, SAMPLE_TASKS, setItemStatus, type ImportItem } from './checklistRepo';
 import { ImportSheet } from './ImportSheet';
+import { isOverdue, isPlannedOn } from './period';
 import { transact } from '../../db/repo';
 
 type StatusFilter = 'all' | 'open' | 'done' | 'skipped';
-type DateFilter = 'all' | 'today' | 'planned' | 'unplanned';
+type DateFilter = 'all' | 'today' | 'planned' | 'unplanned' | 'overdue';
 
 export function ListsScreen(props: { type: ChecklistType }) {
-  const { db, ctx, trip, date, toast } = useApp();
+  const { db, ctx, trip, date, toast, today } = useApp();
   const type = props.type;
   const params = new URLSearchParams(location.hash.split('?')[1] ?? '');
   const itemsQ = useLiveQuery(() => listItems(db, trip.id, type), [db, trip.id, type]);
   const items = useMemo(() => itemsQ ?? [], [itemsQ]);
   const [status, setStatus] = useState<StatusFilter>('all');
-  const [dateF, setDateF] = useState<DateFilter>('all');
+  const fParam = params.get('f');
+  const [dateF, setDateF] = useState<DateFilter>(() => (fParam === 'overdue' ? 'overdue' : 'all'));
+  // 「今日」の画面から ?f=overdue で来たとき・外れたときに絞り込みを合わせる
+  const [lastF, setLastF] = useState(fParam);
+  if (lastF !== fParam) {
+    setLastF(fParam);
+    setDateF(fParam === 'overdue' ? 'overdue' : 'all');
+  }
   const [area, setArea] = useState('');
   const [prio, setPrio] = useState('');
   const [q, setQ] = useState('');
@@ -35,7 +43,8 @@ export function ListsScreen(props: { type: ChecklistType }) {
     (i) =>
       (status === 'all' || i.status === status) &&
       (dateF === 'all' ||
-        (dateF === 'today' && (i.plannedDate === date || i.completedDate === date)) ||
+        (dateF === 'today' && (isPlannedOn(i, date) || i.completedDate === date)) ||
+        (dateF === 'overdue' && isOverdue(i, today)) ||
         (dateF === 'planned' && !!i.plannedDate) ||
         (dateF === 'unplanned' && !i.plannedDate)) &&
       (!area || i.area === area) &&
@@ -122,6 +131,12 @@ export function ListsScreen(props: { type: ChecklistType }) {
         <button className="btn small ghost" onClick={() => setReorder((r) => !r)}>{reorder ? '並べ替えを終える' : '並べ替え'}</button>
       </div>
 
+      {dateF === 'overdue' && (
+        <p className="overdue-filter">
+          ⚠ 予定を過ぎた未完了：{filtered.length} 件
+          <button className="btn small ghost" onClick={() => (fParam ? navigate(`lists/${type}`) : setDateF('all'))}>すべて表示</button>
+        </p>
+      )}
       <details className="filters">
         <summary>絞り込み・検索</summary>
         <div className="row wrap">
@@ -133,6 +148,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
           </select>
           <select value={dateF} onChange={(e) => setDateF(e.target.value as DateFilter)} aria-label="予定日">
             <option value="all">予定日：すべて</option>
+            <option value="overdue">予定を過ぎた未完了</option>
             <option value="today">選択日（{date}）</option>
             <option value="planned">予定あり</option>
             <option value="unplanned">予定なし</option>

@@ -901,7 +901,7 @@ function BigCard({
   if (phase === 'check') {
     return (
       <div className="bigcard" role="dialog" aria-modal="true" aria-label="聞き取りの確認">
-        <div className="check">
+        <div className="bigcard-check">
           <p className="check-label">{reply.recording ? '聞き取り中…' : `${heardLabel}（タップで直せます）`}</p>
           {editing ? (
             <div className="check-edit">

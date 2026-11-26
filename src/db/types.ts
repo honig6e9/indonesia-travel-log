@@ -92,6 +92,8 @@ export interface ChecklistItem extends BaseRecord {
   category: string;
   area: string;
   plannedDate?: string | null;
+  /** 期間がある予定の終了日（1 日だけなら空） */
+  plannedEndDate?: string | null;
   status: TaskStatus; // food は open=未体験, done=食べた, skipped=見送り
   completedDate?: string | null;
   priority: Priority;
