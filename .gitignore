@@ -8,3 +8,4 @@ dev-dist
 
 # ローカルのプレビュー設定
 .claude/
+*.tsbuildinfo
