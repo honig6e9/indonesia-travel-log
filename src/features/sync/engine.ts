@@ -47,6 +47,9 @@ function kindLabel(e: TransportError) {
   }
 }
 
+/** 後から足した種類。古いサーバーでも他の記録の同期を止めないよう、単独のバッチで送る */
+const SEPARATE_TYPES = new Set<EntityType>(['inboxItem']);
+
 export async function getMeta<T>(db: TravelDB, key: string, fallback: T): Promise<T> {
   const r = await db.syncMeta.get(key);
   return r === undefined ? fallback : (r.value as T);
@@ -182,7 +185,11 @@ export class SyncEngine {
     }
     let current: OutboxOp[] = [];
     const emitted = new Set<string>();
+    // 新しく足した種類は別のバッチで送る（サーバーの更新前に拒まれても、ほかの記録の送信を止めない）
+    const separate = ready.filter((o) => !o.groupId && SEPARATE_TYPES.has(o.entityType));
+    for (let i = 0; i < separate.length; i += PUSH_BATCH) batches.push(separate.slice(i, i + PUSH_BATCH));
     for (const o of ready) {
+      if (!o.groupId && SEPARATE_TYPES.has(o.entityType)) continue;
       if (o.groupId) {
         if (blockedGroups.has(o.groupId) || emitted.has(o.groupId)) continue;
         emitted.add(o.groupId);
@@ -285,7 +292,14 @@ export class SyncEngine {
       for (const o of ops) {
         const cur = await this.db.outbox.get(o.seq!);
         if (!cur) continue;
-        if (RETRYABLE.has(e.kind)) {
+        if (/invalid entity_type/.test(e.message) && SEPARATE_TYPES.has(cur.entityType)) {
+          // サーバーにマイグレーションがまだ当たっていない。消さずに、しばらくしてから送り直す
+          await this.db.outbox.update(o.seq!, {
+            status: 'pending',
+            lastError: 'サーバーの更新待ち（未整理ボックスの SQL が未実行）',
+            nextAttemptAt: Date.now() + 10 * 60 * 1000,
+          });
+        } else if (RETRYABLE.has(e.kind)) {
           await this.db.outbox.update(o.seq!, {
             status: 'pending',
             lastError: kindLabel(e),

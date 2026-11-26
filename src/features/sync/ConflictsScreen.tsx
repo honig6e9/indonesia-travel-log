@@ -18,6 +18,7 @@ const TYPE_LABEL: Record<EntityType, string> = {
   note: 'メモ',
   expense: '支出',
   media: '写真',
+  inboxItem: '未整理ボックスの情報',
   link: '関連づけ',
 };
 

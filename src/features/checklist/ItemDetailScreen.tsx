@@ -13,13 +13,14 @@ import {
   blankExperience,
   deleteExperience,
   deleteItem,
-  FOOD_CATEGORIES,
   listExperiences,
   saveExperience,
   saveItem,
   setItemStatus,
-  TASK_CATEGORIES,
+  categoriesFor,
+  TYPE_TEXT,
 } from './checklistRepo';
+import { inboxSourceOf } from '../inbox/inboxRepo';
 
 export function ItemDetailScreen(props: { id: string }) {
   const { db, ctx, date, toast } = useApp();
@@ -32,6 +33,7 @@ export function ItemDetailScreen(props: { id: string }) {
   const [draft, setDraft] = useState<ChecklistItem | null>(null);
   const [expSheet, setExpSheet] = useState<FoodExperience | null>(null);
   const [mediaSheet, setMediaSheet] = useState<Media | null>(null);
+  const inboxSrc = useLiveQuery(() => inboxSourceOf(db, props.id), [db, props.id]);
 
   // 保存済みの版が変わったら取り込む。編集中の欄は残し、状態（チェック）だけ最新にする
   const prevItem = useRef<ChecklistItem | null>(null);
@@ -61,10 +63,13 @@ export function ItemDetailScreen(props: { id: string }) {
     <div className="screen">
       <header className="diary-head">
         <button className="btn ghost" onClick={() => navigate(`lists/${item.type}`)}>← リスト</button>
-        <strong>{isFood ? '食べたいもの' : 'やること'}</strong>
+        <strong>{TYPE_TEXT[item.type].name}</strong>
         <span />
       </header>
 
+      {inboxSrc && (
+        <button className="btn small ghost" onClick={() => navigate(`inbox/${inboxSrc.id}`)}>📥 取り込んだ元の情報を見る</button>
+      )}
       <div className="segmented">
         {(['open', 'done', 'skipped'] as const).map((s) => (
           <button
@@ -76,7 +81,7 @@ export function ItemDetailScreen(props: { id: string }) {
               toast(s === 'done' ? `${date} に記録しました` : s === 'open' && isFood ? '状態を戻しました（実食の記録は残っています）' : '状態を変更しました');
             }}
           >
-            {s === 'open' ? (isFood ? '未体験' : '未完了') : s === 'done' ? (isFood ? '食べた' : '完了') : '見送り'}
+            {s === 'open' ? TYPE_TEXT[item.type].open : s === 'done' ? TYPE_TEXT[item.type].done : '見送り'}
           </button>
         ))}
       </div>
@@ -92,7 +97,7 @@ export function ItemDetailScreen(props: { id: string }) {
       <div className="row">
         <Field label="分類">
           <select value={draft.category} onChange={(e) => set({ category: e.target.value })}>
-            {(isFood ? FOOD_CATEGORIES : TASK_CATEGORIES).map((c) => (
+            {categoriesFor(item.type).map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>
@@ -105,7 +110,7 @@ export function ItemDetailScreen(props: { id: string }) {
           </select>
         </Field>
       </div>
-      <Field label={isFood ? '行きたい店・地域' : 'エリア・店名'}>
+      <Field label={TYPE_TEXT[item.type].area}>
         <input value={draft.area} onChange={(e) => set({ area: e.target.value })} />
       </Field>
       <div className="row">
@@ -121,7 +126,7 @@ export function ItemDetailScreen(props: { id: string }) {
             onChange={(e) => set({ plannedEndDate: e.target.value || null })}
           />
         </Field>
-        <Field label={isFood ? '食べた日' : '完了日'}>
+        <Field label={isFood ? '食べた日' : item.type === 'place' ? '行った日' : '完了日'}>
           <input type="date" value={draft.completedDate ?? ''} disabled={item.status !== 'done'} onChange={(e) => set({ completedDate: e.target.value || null })} />
         </Field>
       </div>

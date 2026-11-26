@@ -7,7 +7,7 @@ import { getSetting } from '../../db/db';
 import type { ChecklistItem, Expense, Media, Note } from '../../db/types';
 import { addDays, dayLabel, shortDate, timeIn, todayIn, weekdayJa } from '../../lib/dates';
 import { formatMoney } from '../../lib/format';
-import { listItems, progress, setItemStatus } from '../checklist/checklistRepo';
+import { listItems, progress, setItemStatus, TYPE_TEXT } from '../checklist/checklistRepo';
 import { loadDiary } from '../diary/diaryRepo';
 import { ExpenseSheet } from '../expenses/ExpenseSheet';
 import { expensesOn, totalsByCurrency } from '../expenses/expenseRepo';
@@ -19,6 +19,8 @@ import { blankNote, notesOn, saveNote } from '../notes/notesRepo';
 import { formatPosition, getCurrentPosition } from '../../lib/geo';
 import { SyncStatusLine } from '../sync/SyncStatus';
 import { formatPeriod, isOverdue, isPlannedOn, periodOf } from '../checklist/period';
+import { pendingInboxCount } from '../inbox/inboxRepo';
+import { usePendingShares } from '../inbox/InboxScreen';
 import { RatingsCard } from './RatingsCard';
 
 export function DateHeader() {
@@ -53,6 +55,8 @@ export function TodayScreen() {
   const diary = useLiveQuery(() => loadDiary(db, trip.id, date), [db, trip.id, date]);
   const drafts = useLiveQuery(() => db.drafts.count(), [db]) ?? 0;
   const tasks = useLiveQuery(() => listItems(db, trip.id, 'task'), [db, trip.id]) ?? [];
+  const inboxCount = useLiveQuery(() => pendingInboxCount(db, trip.id), [db, trip.id]) ?? 0;
+  const shares = usePendingShares();
   const foods = useLiveQuery(() => listItems(db, trip.id, 'food'), [db, trip.id]) ?? [];
   const notes = useLiveQuery(() => notesOn(db, trip.id, date), [db, trip.id, date]) ?? [];
   const media = useLiveQuery(() => mediaOn(db, trip.id, date), [db, trip.id, date]) ?? [];
@@ -77,7 +81,7 @@ export function TodayScreen() {
         action: { label: '元に戻す', run: () => void setItemStatus(ctx, { ...item, status: 'open' }, 'done', item.completedDate ?? date) },
       });
     } else {
-      toast(`「${item.title}」を${item.type === 'food' ? '食べた' : '完了'}にしました（${date}）`, {
+      toast(`「${item.title}」を${TYPE_TEXT[item.type].done}にしました（${date}）`, {
         action: { label: 'メモを追加', run: () => navigate(`item/${item.id}`) },
       });
     }
@@ -119,6 +123,24 @@ export function TodayScreen() {
           ⚠ 中断された録音が {drafts} 件あります。確認する →
         </button>
       )}
+
+      <section className="card inbox-card">
+        <div className="card-head">
+          <button className="card-head as-button" onClick={() => navigate('inbox')}>
+            <h2>📥 未整理ボックス</h2>
+            <span className={inboxCount + shares.length > 0 ? 'badge strong' : 'muted'}>
+              {inboxCount + shares.length > 0 ? `未整理 ${inboxCount + shares.length} 件` : 'なし'}
+            </span>
+          </button>
+        </div>
+        <div className="actions">
+          <button className="btn small" onClick={() => navigate('inbox/new?paste=1')}>📋 貼り付けて取り込む</button>
+          <button className="btn small ghost" onClick={() => navigate('inbox/new')}>＋ 入力</button>
+          {shares.length > 0 && (
+            <button className="btn small" onClick={() => navigate(`share?id=${shares[0].id}`)}>受け取った共有 {shares.length} 件を登録</button>
+          )}
+        </div>
+      </section>
 
       <section className="card diary-card">
         <h2>🎙 音声日記</h2>

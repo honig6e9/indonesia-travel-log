@@ -8,6 +8,7 @@ import type {
   DailyLog,
   Expense,
   FoodExperience,
+  InboxItem,
   Interpretation,
   Link,
   LocalOriginal,
@@ -22,7 +23,8 @@ import type {
 } from './types';
 
 export const DB_BASE_NAME = 'indonesia-travel-log';
-export const SCHEMA_VERSION = 2;
+/** バックアップの形式の版にも使う（DB の版と同じ） */
+export const SCHEMA_VERSION = 3;
 
 /**
  * 1 つの「領域（ワークスペース）」の DB。
@@ -50,10 +52,12 @@ export class TravelDB extends Dexie {
   conflicts!: Table<ConflictRow, string>;
   drafts!: Table<RecordingDraft, string>;
   interpretations!: Table<Interpretation, string>;
+  inboxItems!: Table<InboxItem, string>;
 
   constructor(name: string) {
     super(name);
-    this.version(SCHEMA_VERSION).stores({
+    // 版 1 と 2 はどちらも 2 として作っていたので、最初の定義は 2 のまま（既存の端末と同じ）
+    this.version(2).stores({
       trips: 'id',
       questionTemplates: 'id, tripId',
       dailyLogs: 'id, tripId, [tripId+localDate]',
@@ -74,9 +78,13 @@ export class TravelDB extends Dexie {
       conflicts: 'id, [entityType+entityId], status',
       drafts: 'id, dailyLogId',
     });
-    // v2：通訳の履歴（端末固有。既存データには触れない）
+    // 通訳の履歴（端末固有。既存データには触れない）
     this.version(2).stores({
       interpretations: 'id, createdAt, status',
+    });
+    // v3：外部から取り込んだ情報（未整理ボックス）。既存のテーブルには触れない
+    this.version(3).stores({
+      inboxItems: 'id, tripId, [tripId+status], urlKey, textHash, shareId',
     });
   }
 }
@@ -92,6 +100,7 @@ export const RECORD_TABLES = [
   'notes',
   'expenses',
   'media',
+  'inboxItems',
   'links',
 ] as const;
 export type RecordTableName = (typeof RECORD_TABLES)[number];

@@ -29,6 +29,18 @@ export default defineConfig({
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
           { src: 'icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
+        // Android の共有メニューに出す。受け取りは public/share-target.js（Service Worker）
+        share_target: {
+          action: base + 'share-target',
+          method: 'POST',
+          enctype: 'multipart/form-data',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+            files: [{ name: 'files', accept: ['image/*'] }],
+          },
+        },
       },
       workbox: {
         // アプリシェルだけをキャッシュする。旅行データ（IndexedDB）や Supabase への通信は扱わない
@@ -37,6 +49,8 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/auth\//],
         runtimeCaching: [],
         cleanupOutdatedCaches: true,
+        // 共有の受け取りを Workbox より先に登録する
+        importScripts: ['share-target.js'],
       },
     }),
   ],

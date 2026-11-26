@@ -6,7 +6,8 @@ import { Empty, Sheet } from '../../components/ui';
 import type { ChecklistItem, ChecklistType } from '../../db/types';
 import { percent } from '../../lib/format';
 import { CheckRow } from '../daily/TodayScreen';
-import { addItems, listItems, parseBulk, parseImportFile, progress, SAMPLE_FOODS, SAMPLE_TASKS, setItemStatus, type ImportItem } from './checklistRepo';
+import { addItems, listItems, parseBulk, parseImportFile, progress, SAMPLE_FOODS, SAMPLE_TASKS, setItemStatus, TYPE_TEXT, type ImportItem } from './checklistRepo';
+import { pendingInboxCount } from '../inbox/inboxRepo';
 import { ImportSheet } from './ImportSheet';
 import { isOverdue, isPlannedOn } from './period';
 import { transact } from '../../db/repo';
@@ -20,6 +21,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
   const params = new URLSearchParams(location.hash.split('?')[1] ?? '');
   const itemsQ = useLiveQuery(() => listItems(db, trip.id, type), [db, trip.id, type]);
   const items = useMemo(() => itemsQ ?? [], [itemsQ]);
+  const inboxCount = useLiveQuery(() => pendingInboxCount(db, trip.id), [db, trip.id]) ?? 0;
   const [status, setStatus] = useState<StatusFilter>('all');
   const fParam = params.get('f');
   const [dateF, setDateF] = useState<DateFilter>(() => (fParam === 'overdue' ? 'overdue' : 'all'));
@@ -60,7 +62,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
       toast(`チェックを外しました${type === 'food' ? '（実食の記録は残っています）' : ''}`, {
         action: { label: '元に戻す', run: () => void setItemStatus(ctx, { ...item, status: 'open' }, 'done', item.completedDate ?? date) },
       });
-    else toast(`${date} に${type === 'food' ? '食べた' : '完了'}として記録しました`, { action: { label: 'メモを追加', run: () => navigate(`item/${item.id}`) } });
+    else toast(`${date} に${TYPE_TEXT[type].done}として記録しました`, { action: { label: 'メモを追加', run: () => navigate(`item/${item.id}`) } });
   };
 
   const addOne = async () => {
@@ -90,9 +92,15 @@ export function ListsScreen(props: { type: ChecklistType }) {
         <button role="tab" aria-selected={type === 'food'} className={type === 'food' ? 'on' : ''} onClick={() => navigate('lists/food', { replace: true })}>
           食べたいもの
         </button>
+        <button role="tab" aria-selected={type === 'place'} className={type === 'place' ? 'on' : ''} onClick={() => navigate('lists/place', { replace: true })}>
+          行きたい場所
+        </button>
       </div>
+      {inboxCount > 0 && (
+        <button className="btn small inbox-link" onClick={() => navigate('inbox')}>📥 未整理 {inboxCount} 件</button>
+      )}
       <p className="muted">
-        {type === 'task' ? '完了' : '食べた'} {p.done}/{p.total}　見送り {p.skipped}　達成率 {percent(p.done, p.total)}
+        {TYPE_TEXT[type].done} {p.done}/{p.total}　見送り {p.skipped}　達成率 {percent(p.done, p.total)}
       </p>
 
       <div className="add-row">
@@ -101,7 +109,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
           autoFocus={params.get('add') === '1'}
           onChange={(e) => setNewTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && void addOne()}
-          placeholder={type === 'task' ? '例：KRLに乗る' : '例：Soto Ayam（ソトアヤム）'}
+          placeholder={TYPE_TEXT[type].placeholder}
           aria-label="追加する項目"
         />
         <button className="btn primary" onClick={() => void addOne()}>追加</button>
@@ -109,7 +117,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
       {plannedFromQuery && <p className="muted small">予定日 {plannedFromQuery} として追加します</p>}
       <div className="actions">
         <button className="btn small ghost" onClick={() => setBulk('')}>まとめて追加</button>
-        <button className="btn small ghost" onClick={() => setBulk(type === 'task' ? SAMPLE_TASKS : SAMPLE_FOODS)}>候補サンプルから選ぶ</button>
+        {type !== 'place' && <button className="btn small ghost" onClick={() => setBulk(type === 'task' ? SAMPLE_TASKS : SAMPLE_FOODS)}>候補サンプルから選ぶ</button>}
         <label className="btn small ghost file-btn">
           ファイルから取り込む
           <input
@@ -142,8 +150,8 @@ export function ListsScreen(props: { type: ChecklistType }) {
         <div className="row wrap">
           <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)} aria-label="状態">
             <option value="all">すべて</option>
-            <option value="open">{type === 'task' ? '未完了' : '未体験'}</option>
-            <option value="done">{type === 'task' ? '完了' : '食べた'}</option>
+            <option value="open">{TYPE_TEXT[type].open}</option>
+            <option value="done">{TYPE_TEXT[type].done}</option>
             <option value="skipped">見送り</option>
           </select>
           <select value={dateF} onChange={(e) => setDateF(e.target.value as DateFilter)} aria-label="予定日">
@@ -170,7 +178,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
       </details>
 
       {items.length === 0 ? (
-        <Empty>まだ項目がありません。上の欄から追加するか、「候補サンプルから選ぶ」で取り込めます。</Empty>
+        <Empty>{type === 'place' ? 'まだ項目がありません。上の欄から追加するか、未整理ボックスから登録できます。' : 'まだ項目がありません。上の欄から追加するか、「候補サンプルから選ぶ」で取り込めます。'}</Empty>
       ) : (
         <ul className="checklist">
           {(reorder ? items : filtered).map((i, k) =>
@@ -205,7 +213,7 @@ function BulkSheet(props: { type: ChecklistType; initial: string; existing: Chec
   const toAdd = parsed.filter((p, i) => !excluded.has(i) && !(skipDup && p.duplicate)).map((p) => p.line);
   return (
     <Sheet
-      title={props.type === 'task' ? 'やることをまとめて追加' : '食べたいものをまとめて追加'}
+      title={`${TYPE_TEXT[props.type].name}をまとめて追加`}
       onClose={props.onClose}
       footer={
         step === 'edit' ? (

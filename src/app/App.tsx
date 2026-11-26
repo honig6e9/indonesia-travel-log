@@ -27,6 +27,9 @@ import { DayScreen } from '../features/history/DayScreen';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
 import { ConflictsScreen } from '../features/sync/ConflictsScreen';
 import { InterpretScreen } from '../features/interpret/InterpretScreen';
+import { InboxScreen } from '../features/inbox/InboxScreen';
+import { InboxDetailScreen } from '../features/inbox/InboxDetailScreen';
+import { QuickAddScreen } from '../features/inbox/QuickAddScreen';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
@@ -253,7 +256,7 @@ function Workspaced(props: {
       screen = <DiaryScreen initialQuestion={route.query.get('q')} />;
       break;
     case 'lists':
-      screen = <ListsScreen type={route.param === 'food' ? 'food' : 'task'} />;
+      screen = <ListsScreen type={route.param === 'food' || route.param === 'place' ? route.param : 'task'} />;
       break;
     case 'item':
       screen = <ItemDetailScreen id={route.param ?? ''} />;
@@ -273,10 +276,23 @@ function Workspaced(props: {
     case 'interpret':
       screen = <InterpretScreen />;
       break;
+    case 'inbox':
+      screen =
+        route.param === 'new' ? (
+          <QuickAddScreen key={'new' + route.query.get('paste')} shareId={null} paste={route.query.get('paste') === '1'} />
+        ) : route.param ? (
+          <InboxDetailScreen id={route.param} />
+        ) : (
+          <InboxScreen />
+        );
+      break;
+    case 'share':
+      screen = <QuickAddScreen key={route.query.get('id') ?? 'err'} shareId={route.query.get('id')} shareError={route.query.get('error') === '1'} />;
+      break;
     default:
       screen = <TodayScreen />;
   }
-  const tab = route.name === 'diary' || route.name === 'today' ? 'today' : route.name === 'item' ? 'lists' : route.name === 'day' ? 'history' : route.name === 'conflicts' ? 'settings' : route.name;
+  const tab = route.name === 'diary' || route.name === 'today' || route.name === 'inbox' || route.name === 'share' ? 'today' : route.name === 'item' ? 'lists' : route.name === 'day' ? 'history' : route.name === 'conflicts' ? 'settings' : route.name;
 
   return (
     <AppContext.Provider value={state}>

@@ -53,7 +53,7 @@ export function DayScreen(props: { date: string }) {
   for (const m of data.media.filter((x) => x.localDate === date))
     evs.push({ at: m.createdAt, key: m.id, node: <div className="tl-photo"><Thumb blobId={m.blobId} thumbId={m.thumbnailBlobId} alt={m.caption || '写真'} onClick={() => setSheet({ media: m })} /><span className="small">{m.caption}</span></div> });
   for (const i of data.items.filter((x) => x.status === 'done' && x.completedDate === date))
-    evs.push({ at: i.updatedAt, key: i.id, node: <button className="row-btn" onClick={() => navigate(`item/${i.id}`)}><span>{i.type === 'task' ? '☑' : '🍜'} {i.title}</span></button> });
+    evs.push({ at: i.updatedAt, key: i.id, node: <button className="row-btn" onClick={() => navigate(`item/${i.id}`)}><span>{i.type === 'task' ? '☑' : i.type === 'place' ? '📍' : '🍜'} {i.title}</span></button> });
   for (const e of data.exps.filter((x) => x.localDate === date)) {
     const it = data.items.find((x) => x.id === e.checklistItemId);
     evs.push({ at: e.createdAt, key: e.id, node: <button className="row-btn" onClick={() => navigate(`item/${e.checklistItemId}`)}><span>🍜 実食：{it?.title} {e.shop}</span><span>{e.price != null ? formatMoney(e.price, e.currency) : ''}</span></button> });

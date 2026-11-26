@@ -1,3 +1,4 @@
+import { TYPE_TEXT } from '../checklist/checklistRepo';
 import type { TravelDB } from '../../db/db';
 import { alive } from '../../db/repo';
 import type {
@@ -108,7 +109,7 @@ export function search(d: TripData, keyword: string, tag: string): SearchHit[] {
   }
   for (const n of d.notes) if (has(n.body, n.location, n.category, ...n.tags) && tagged(n.tags)) hits.push({ kind: 'メモ', date: n.localDate, text: n.body, go: `day/${n.localDate}` });
   if (!tg) {
-    for (const i of d.items) if (has(i.title, i.localName, i.area, i.note)) hits.push({ kind: i.type === 'task' ? 'やること' : '食べたいもの', date: i.completedDate ?? i.plannedDate ?? null, text: i.title, go: `item/${i.id}` });
+    for (const i of d.items) if (has(i.title, i.localName, i.area, i.note)) hits.push({ kind: TYPE_TEXT[i.type].name, date: i.completedDate ?? i.plannedDate ?? null, text: i.title, go: `item/${i.id}` });
     for (const e of d.exps) if (has(e.shop, e.comment)) hits.push({ kind: '実食', date: e.localDate, text: `${e.shop} ${e.comment}`, go: `item/${e.checklistItemId}` });
     for (const e of d.expenses) if (has(e.shop, e.note, e.category)) hits.push({ kind: '支出', date: e.localDate, text: `${e.category} ${e.shop} ${e.note}`, go: `day/${e.localDate}` });
   }

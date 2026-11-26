@@ -5,6 +5,18 @@ import { experienceExpenseId, firstExperienceId, newId } from '../../lib/ids';
 
 export const TASK_CATEGORIES = ['観光', '生活', '買い物', '交流', '調査', 'その他'];
 export const FOOD_CATEGORIES = ['料理', '飲み物', 'おやつ', 'その他'];
+export const PLACE_CATEGORIES = ['観光地', '店・カフェ', '市場', '自然', '宗教施設', 'その他'];
+
+export function categoriesFor(type: ChecklistType): string[] {
+  return type === 'food' ? FOOD_CATEGORIES : type === 'place' ? PLACE_CATEGORIES : TASK_CATEGORIES;
+}
+
+/** リストの種類ごとの呼び方 */
+export const TYPE_TEXT: Record<ChecklistType, { name: string; open: string; done: string; placeholder: string; area: string }> = {
+  task: { name: 'やること', open: '未完了', done: '完了', placeholder: '例：KRLに乗る', area: 'エリア・店名' },
+  food: { name: '食べたいもの', open: '未体験', done: '食べた', placeholder: '例：Soto Ayam（ソトアヤム）', area: '行きたい店・地域' },
+  place: { name: '行きたい場所', open: '未訪問', done: '行った', placeholder: '例：Kota Tua（コタトゥア）', area: '地域・住所' },
+};
 
 export const SAMPLE_TASKS = `現地SIMの設定を確認する
 KRLに乗る
@@ -52,7 +64,7 @@ export function blankItem(tripId: string, type: ChecklistType, title: string, so
     tripId,
     type,
     title: t,
-    category: type === 'task' ? 'その他' : '料理',
+    category: type === 'food' ? '料理' : 'その他',
     area: '',
     plannedDate: null,
     status: 'open',

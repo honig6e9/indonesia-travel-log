@@ -202,6 +202,8 @@ export async function validateBackup(file: Blob): Promise<ValidatedBackup> {
 
   const data = (await readJson('backup.json')) as BackupData;
   if (!data || typeof data !== 'object' || !data.tables) throw new BackupError('backup.json の形式が不正です');
+  // 版 2 までのバックアップには未整理ボックスがない
+  if (manifest.schemaVersion < 3 && data.tables.inboxItems === undefined) data.tables.inboxItems = [];
   for (const t of RECORD_TABLES) {
     if (!Array.isArray(data.tables[t])) throw new BackupError(`backup.json に ${t} がありません`);
   }
@@ -333,6 +335,7 @@ export async function copyTripAsNew(src: TravelDB, srcTripId: string, dst: Ctx, 
   const expenses = await get<import('../../db/types').Expense>('expenses');
   const media = await get<Media>('media');
   const links = await get<import('../../db/types').Link>('links');
+  const inbox = await get<import('../../db/types').InboxItem>('inboxItems');
   const origs = await src.localOriginals.toArray();
   const conflicts = await src.conflicts.where('status').equals('open').toArray();
 
@@ -346,7 +349,7 @@ export async function copyTripAsNew(src: TravelDB, srcTripId: string, dst: Ctx, 
     const fromExp = exps.find((x) => x.expenseId === e.id && e.id === experienceExpenseId(x.id));
     map.set(e.id, fromExp ? experienceExpenseId(map.get(fromExp.id)!) : newId());
   }
-  for (const r of [...clips, ...notes, ...media, ...links]) map.set(r.id, newId());
+  for (const r of [...clips, ...notes, ...media, ...inbox, ...links]) map.set(r.id, newId());
   const m = (id: string | null | undefined) => (id ? (map.get(id) ?? null) : null);
   const blobOut = async (blobId: string | null | undefined) => {
     if (!blobId) return null;
@@ -378,6 +381,7 @@ export async function copyTripAsNew(src: TravelDB, srcTripId: string, dst: Ctx, 
       for (const e of exps)
         await w.put('foodExperience', { ...e, ...base, id: m(e.id)!, tripId: newTrip, checklistItemId: m(e.checklistItemId)!, expenseId: m(e.expenseId) });
       for (const n of notes) await w.put('note', { ...n, ...base, id: m(n.id)!, tripId: newTrip });
+      for (const x of inbox) await w.put('inboxItem', { ...x, ...base, id: m(x.id)!, tripId: newTrip, shareId: null });
       for (const c of clips) {
         const nb = (await blobOut(c.blobId))!;
         await w.put('audioClip', { ...c, ...base, id: m(c.id)!, tripId: newTrip, dailyLogId: m(c.dailyLogId)!, answerId: m(c.answerId), blobId: nb });

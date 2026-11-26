@@ -82,7 +82,7 @@ export interface AudioClip extends BaseRecord {
   sortOrder: number;
 }
 
-export type ChecklistType = 'task' | 'food';
+export type ChecklistType = 'task' | 'food' | 'place';
 export type TaskStatus = 'open' | 'done' | 'skipped';
 export type Priority = 'high' | 'normal' | 'low';
 
@@ -171,6 +171,43 @@ export interface Media extends BaseRecord {
   cloudCompressed?: boolean;
 }
 
+export type InboxSource = 'x' | 'whatsapp' | 'instagram' | 'maps' | 'web' | 'clipboard' | 'image' | 'manual' | 'unknown';
+export const INBOX_SOURCE_LABEL: Record<InboxSource, string> = {
+  x: 'X',
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  maps: 'Google マップ',
+  web: 'Web',
+  clipboard: 'クリップボード',
+  image: '画像',
+  manual: '手入力',
+  unknown: 'その他',
+};
+export type InboxStatus = 'pending' | 'processed' | 'archived';
+
+/** 外部から取り込んだ未整理の情報。原文・URL は変えずに残し、整理後も変換先とリンクで結ぶ */
+export interface InboxItem extends BaseRecord {
+  sourceType: InboxSource;
+  sourceTitle: string;
+  sourceText: string;
+  sourceUrl: string;
+  translatedText: string;
+  status: InboxStatus;
+  /** 一覧で見せる名前（空なら原文の先頭から作る） */
+  title: string;
+  memo: string;
+  /** 登録先の候補（変換時の初期値） */
+  category: string;
+  area: string;
+  plannedDate?: string | null;
+  priority: Priority;
+  /** 重複の判定用：正規化した URL と原文のハッシュ */
+  urlKey: string;
+  textHash: string;
+  /** 共有で受け取ったときの受信 ID */
+  shareId?: string | null;
+}
+
 export interface Link extends BaseRecord {
   sourceType: EntityType;
   sourceId: string;
@@ -189,6 +226,7 @@ export type EntityType =
   | 'note'
   | 'expense'
   | 'media'
+  | 'inboxItem'
   | 'link';
 
 export interface EntityMap {
@@ -202,6 +240,7 @@ export interface EntityMap {
   note: Note;
   expense: Expense;
   media: Media;
+  inboxItem: InboxItem;
   link: Link;
 }
 
@@ -216,6 +255,7 @@ export const ENTITY_TABLE = {
   note: 'notes',
   expense: 'expenses',
   media: 'media',
+  inboxItem: 'inboxItems',
   link: 'links',
 } as const satisfies Record<EntityType, string>;
 
@@ -233,6 +273,7 @@ export const ENTITY_ORDER: Record<EntityType, number> = {
   audioClip: 4,
   expense: 5,
   foodExperience: 6,
+  inboxItem: 6,
   link: 7,
 };
 
