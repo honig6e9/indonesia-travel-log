@@ -259,13 +259,14 @@ p { margin: 6px 0; }
 .result-card audio { width: 100%; }
 .waiting { font-weight: 600; }
 .interp-row { flex-direction: column !important; align-items: flex-start !important; }
-.bigcard { position: fixed; inset: 0; z-index: 80; background: #000; color: #fff; display: flex; flex-direction: column; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
-.bigcard-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 16px; overflow: auto; text-align: center; }
+.bigcard { position: fixed; inset: 0; z-index: 80; background: #fff; color: #111; display: flex; flex-direction: column; padding: 12px 12px calc(8px + env(safe-area-inset-bottom)); }
+.bigcard-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .bigcard-body.flip { transform: rotate(180deg); }
-.bigcard-target { margin: 0; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
-.bigcard-reading { margin: 0; font-size: 6vw; color: #ffd9a8; }
-.bigcard-source { margin: 0; font-size: 4.2vw; color: #bbb; }
-.bigcard-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.bigcard-actions .btn { background: #222; color: #fff; border-color: #444; }
-.bigcard-actions .btn.primary { background: var(--accent); color: #fff; }
+.bigcard-target { margin: 0; width: 100%; font-weight: 800; line-height: 1.18; text-align: center; overflow-wrap: normal; word-break: normal; hyphens: none; letter-spacing: 0.01em; }
+.bigcard-details { border-top: 1px solid #ddd; padding: 8px 4px; max-height: 30vh; overflow: auto; }
+.bigcard-reading { margin: 0 0 4px; font-size: 1.15rem; color: #8a4b00; }
+.bigcard-source { margin: 0; font-size: 1rem; color: #666; }
+.bigcard-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.bigcard-icon { min-width: 44px; min-height: 44px; border: none; background: transparent; color: #aaa; font-size: 1.3rem; border-radius: 10px; cursor: pointer; }
+.bigcard-icon.on { color: #b5462f; background: #f6ece8; }
 .add-row .btn { white-space: nowrap; }

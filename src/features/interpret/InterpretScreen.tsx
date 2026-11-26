@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '../../app/context';
 import { navigate, setNavigationGuard } from '../../app/router';
@@ -7,7 +7,7 @@ import type { Interpretation } from '../../db/types';
 import { newId } from '../../lib/ids';
 import { formatDuration } from '../../lib/format';
 import { supabase } from '../../lib/supabase';
-import { extForMime, micErrorMessage, openMic, pickAudioFormat, recordingSupported } from '../diary/recorder';
+import { extForMime, micErrorMessage, openMic, pickAudioFormat, recordingSupported, requestWakeLock } from '../diary/recorder';
 import {
   WAIT_FALLBACK_MS,
   fetchAudio,
@@ -58,6 +58,15 @@ export function InterpretScreen() {
 
   const items = useLiveQuery(() => db.interpretations.orderBy('createdAt').reverse().limit(60).toArray(), [db]) ?? [];
   const current = items.find((i) => i.id === currentId) ?? null;
+
+  // この画面で送った 1 件の訳が届いたら、すぐ全画面で見せる
+  const autoShowRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (current && current.id === autoShowRef.current && current.status === 'done' && current.targetText) {
+      autoShowRef.current = null;
+      setBig(current);
+    }
+  }, [current]);
 
   // PC の応答状況・履歴の取り込み・未送信の再送
   const sendPending = useCallback(async () => {
@@ -123,6 +132,7 @@ export function InterpretScreen() {
   const enqueue = async (it: Interpretation) => {
     await db.interpretations.put(it);
     setCurrentId(it.id);
+    autoShowRef.current = it.id;
     if (!canUsePc || !supabase) return;
     try {
       await submit(db, supabase, ws.ownerId!, device.id, it);
@@ -398,29 +408,78 @@ function Fallback({ item, mode, reason }: { item: Interpretation | null; mode: M
   );
 }
 
-/** 相手に見せるための全画面表示。「向きを変える」で、向かいの相手に読みやすく 180 度回せる */
+/**
+ * 相手に見せるための全画面表示。訳文だけを、画面に収まる最大の文字で出す。
+ * 読み方・元の文・操作は目立たない小さなボタンにまとめ、必要なときだけ開く。
+ */
 function BigCard({ item, onClose }: { item: Interpretation; onClose: () => void }) {
   const { toast } = useApp();
   const [flip, setFlip] = useState(false);
+  const [details, setDetails] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLParagraphElement>(null);
   const t = item.targetText ?? '';
-  const size = t.length <= 16 ? '14vw' : t.length <= 40 ? '10vw' : t.length <= 90 ? '8vw' : '6vw';
   const lang = (item.targetLang as 'ja' | 'id') ?? 'id';
+
+  // 枠に収まる最大の文字の大きさを探す（画面の向きや大きさが変わったら探し直す）
+  const fit = useCallback(() => {
+    const box = boxRef.current;
+    const el = textRef.current;
+    if (!box || !el) return;
+    let lo = 16;
+    let hi = 480;
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2);
+      el.style.fontSize = `${mid}px`;
+      if (el.scrollHeight <= box.clientHeight && el.scrollWidth <= box.clientWidth) lo = mid;
+      else hi = mid;
+    }
+    el.style.fontSize = `${lo}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    fit();
+  }, [fit, t, details]);
+
   useEffect(() => {
     const on = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', on);
-    return () => window.removeEventListener('keydown', on);
-  }, [onClose]);
+    window.addEventListener('resize', fit);
+    let wake: { release: () => void } | null = null;
+    void requestWakeLock().then((w) => (wake = w)); // 見せている間は画面を暗くしない
+    return () => {
+      window.removeEventListener('keydown', on);
+      window.removeEventListener('resize', fit);
+      wake?.release();
+    };
+  }, [onClose, fit]);
+
   return (
-    <div className="bigcard" role="dialog" aria-modal="true" aria-label="大きく表示">
-      <div className={'bigcard-body' + (flip ? ' flip' : '')}>
-        <p className="bigcard-target" style={{ fontSize: size }} lang={lang}>{t}</p>
-        {item.reading && <p className="bigcard-reading">{item.reading}</p>}
-        {item.sourceText && <p className="bigcard-source">{item.sourceText}</p>}
+    <div className="bigcard" role="dialog" aria-modal="true" aria-label="訳文">
+      <div ref={boxRef} className={'bigcard-body' + (flip ? ' flip' : '')}>
+        <p ref={textRef} className="bigcard-target" lang={lang}>
+          {t}
+        </p>
       </div>
+      {details && (
+        <div className="bigcard-details">
+          {item.reading && <p className="bigcard-reading">{item.reading}</p>}
+          {item.sourceText && <p className="bigcard-source">{item.sourceText}</p>}
+        </div>
+      )}
       <div className="bigcard-actions">
-        <button className="btn" onClick={() => !speak(t, lang) && toast('この端末では読み上げられません')}>🔊 読み上げ</button>
-        <button className="btn" onClick={() => setFlip((f) => !f)}>↻ 向きを変える</button>
-        <button className="btn primary" onClick={onClose}>閉じる</button>
+        <button className="bigcard-icon" aria-label="読み上げ" onClick={() => !speak(t, lang) && toast('この端末では読み上げられません')}>
+          🔊
+        </button>
+        <button className="bigcard-icon" aria-label="向きを変える" onClick={() => setFlip((f) => !f)}>
+          ↻
+        </button>
+        <button className={'bigcard-icon' + (details ? ' on' : '')} aria-label="読み方と元の文" onClick={() => setDetails((d) => !d)}>
+          {item.reading ? 'ア' : '元'}
+        </button>
+        <button className="bigcard-icon" aria-label="閉じる" onClick={onClose}>
+          ✕
+        </button>
       </div>
     </div>
   );
