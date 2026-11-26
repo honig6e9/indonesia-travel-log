@@ -54,6 +54,9 @@ export function ListsScreen(props: { type: ChecklistType }) {
       (!q || [i.title, i.localName, i.area, i.note].some((s) => s?.toLowerCase().includes(q.toLowerCase()))),
   );
   const p = progress(items);
+  // 予定を過ぎた未完了は、ふだんの一覧から外して最後にまとめる（「予定を過ぎた未完了」で絞り込んだときはそれだけを出す）
+  const overdueList = dateF === 'overdue' ? [] : filtered.filter((i) => isOverdue(i, today));
+  const mainList = dateF === 'overdue' ? filtered : filtered.filter((i) => !isOverdue(i, today));
 
   const toggle = async (item: ChecklistItem) => {
     const next = item.status === 'done' ? 'open' : 'done';
@@ -181,7 +184,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
         <Empty>{type === 'place' ? 'まだ項目がありません。上の欄から追加するか、未整理ボックスから登録できます。' : 'まだ項目がありません。上の欄から追加するか、「候補サンプルから選ぶ」で取り込めます。'}</Empty>
       ) : (
         <ul className="checklist">
-          {(reorder ? items : filtered).map((i, k) =>
+          {(reorder ? items : mainList).map((i, k) =>
             reorder ? (
               <li key={i.id} className="check-row">
                 <span className="check-title">{i.title}</span>
@@ -193,6 +196,16 @@ export function ListsScreen(props: { type: ChecklistType }) {
             ),
           )}
         </ul>
+      )}
+      {!reorder && overdueList.length > 0 && (
+        <details className="overdue-group">
+          <summary>⚠ 予定を過ぎた未完了 {overdueList.length} 件</summary>
+          <ul className="checklist">
+            {overdueList.map((i) => (
+              <CheckRow key={i.id} item={i} onToggle={toggle} detail />
+            ))}
+          </ul>
+        </details>
       )}
       {!reorder && filtered.length === 0 && items.length > 0 && <Empty>条件に合う項目はありません。</Empty>}
 

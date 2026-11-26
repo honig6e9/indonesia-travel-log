@@ -68,10 +68,11 @@ export function TodayScreen() {
   // 選んだ日が予定（期間）に入るもの＋その日に完了したもの
   const todays = tasks.filter((t) => isPlannedOn(t, date) || (t.status === 'done' && t.completedDate === date));
   const overdueCount = tasks.filter((t) => isOverdue(t, today)).length;
-  const shownTasks = todays.length ? todays : tasks.filter((t) => t.status === 'open').sort((a, b) => prio(a) - prio(b)).slice(0, 3);
+  // 予定のない日は未完了の上位を出す。予定を過ぎたものは下の「予定を過ぎた未完了」ボタンにまとめ、ここには出さない
+  const shownTasks = todays.length ? todays : tasks.filter((t) => t.status === 'open' && !isOverdue(t, today)).sort((a, b) => prio(a) - prio(b)).slice(0, 3);
   const todayProg = progress(todays);
   const foodProg = progress(foods);
-  const shownFoods = [...foods.filter((f) => f.plannedDate === date), ...foods.filter((f) => f.status === 'open' && f.plannedDate !== date)].slice(0, 6);
+  const shownFoods = [...foods.filter((f) => f.plannedDate === date), ...foods.filter((f) => f.status === 'open' && f.plannedDate !== date && !isOverdue(f, today))].slice(0, 6);
 
   const toggle = async (item: ChecklistItem) => {
     const next = item.status === 'done' ? 'open' : 'done';

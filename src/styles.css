@@ -354,3 +354,5 @@ p { margin: 6px 0; }
 .split-lines li input:not([type]) { flex: 1; min-width: 0; }
 .badge.strong { background: var(--accent); color: var(--accent-text); }
 .inbox-link { margin-top: 8px; }
+.overdue-group { margin-top: 16px; border: 1px solid var(--danger); border-radius: 10px; padding: 4px 10px; }
+.overdue-group > summary { color: var(--danger); font-weight: 600; min-height: 44px; display: flex; align-items: center; cursor: pointer; }
