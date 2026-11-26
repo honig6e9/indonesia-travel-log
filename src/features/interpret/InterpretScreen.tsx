@@ -28,6 +28,10 @@ import {
 } from './interpretRepo';
 
 const MAX_MS = 60_000;
+/** 録音と音声認識を同時に使えない端末では、音声認識だけで動かす（録音は残らない） */
+const LIVE_ONLY_KEY = 'itl-live-only';
+const LIVE_STATUS_KEY = 'itl-live-status';
+const LIVE_MISS_KEY = 'itl-live-miss';
 /** 話し始めたあと、この長さだけ静かなら止める */
 const SILENCE_MS = 900;
 /** 音声認識で文が確定したあと、この長さだけ続きがなければ止める */
@@ -117,6 +121,19 @@ export function InterpretScreen() {
   const liveStopRef = useRef<Promise<string> | null>(null);
   const [liveText, setLiveText] = useState('');
   const vadRef = useRef<(() => void) | null>(null);
+  const [liveStatus, setLiveStatusState] = useState(() => localStorage.getItem(LIVE_STATUS_KEY) ?? '');
+  const [liveOnly, setLiveOnlyState] = useState(() => localStorage.getItem(LIVE_ONLY_KEY) === '1');
+  const setLiveStatus = (s: string) => {
+    localStorage.setItem(LIVE_STATUS_KEY, s);
+    setLiveStatusState(s);
+  };
+  const setLiveOnly = (on: boolean) => {
+    if (on) localStorage.setItem(LIVE_ONLY_KEY, '1');
+    else localStorage.removeItem(LIVE_ONLY_KEY);
+    localStorage.removeItem(LIVE_MISS_KEY);
+    setLiveOnlyState(on);
+  };
+  const liveTimerRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const startRef = useRef(0);
 
@@ -215,9 +232,69 @@ export function InterpretScreen() {
     }
   };
 
+  /** 音声認識だけで聞き取る（録音しない）。マイクを取り合う端末向け */
+  const startLiveOnly = (recMode: Mode): boolean => {
+    const liveLang: 'ja' | 'id' = recMode === 'id-ja' ? 'id' : 'ja';
+    let pauseTimer: number | null = null;
+    let finished = false;
+    const finish = async () => {
+      if (finished) return;
+      finished = true;
+      if (pauseTimer) window.clearTimeout(pauseTimer);
+      if (liveTimerRef.current) window.clearInterval(liveTimerRef.current);
+      const live = liveRef.current;
+      liveRef.current = null;
+      const heard = live ? (await live.stop()).trim() : '';
+      setRecording(false);
+      setLiveText('');
+      if (!heard) {
+        const err = live?.error();
+        setLiveStatus(`音声認識だけで動かしています（直前：${err ?? '聞き取れませんでした'}）`);
+        return setError('聞き取れませんでした。もう一度どうぞ');
+      }
+      setLiveStatus('音声認識だけで動かしています（録音は残りません）');
+      await enqueue({
+        id: newId(),
+        createdAt: new Date().toISOString(),
+        mode: liveLang === 'ja' ? 'ja-id' : 'id-ja',
+        inputText: heard,
+        sourceText: heard,
+        status: 'local',
+        via: 'pc',
+      });
+    };
+    const live = startLiveRecognition(
+      liveLang,
+      (text, settled) => {
+        setLiveText(text);
+        if (pauseTimer) window.clearTimeout(pauseTimer);
+        if (settled && text) pauseTimer = window.setTimeout(() => void finish(), RECOGNITION_PAUSE_MS);
+      },
+      () => void finish(),
+    );
+    if (!live) return false;
+    liveRef.current = live;
+    stopLiveOnlyRef.current = () => void finish();
+    startRef.current = Date.now();
+    setElapsed(0);
+    setRecording(true);
+    liveTimerRef.current = window.setInterval(() => {
+      const ms = Date.now() - startRef.current;
+      setElapsed(ms);
+      if (ms >= MAX_MS) void finish();
+    }, 200);
+    return true;
+  };
+  const stopLiveOnlyRef = useRef<(() => void) | null>(null);
+
   const startRec = async (recMode: Mode = mode) => {
     setError(null);
     setLiveText('');
+    if (liveOnly && speechRecognitionAvailable()) {
+      stopLiveOnlyRef.current = null;
+      if (startLiveOnly(recMode)) return;
+    }
+    stopLiveOnlyRef.current = null;
     const fmt = pickAudioFormat();
     if (!fmt) return setError('この端末では録音できません。下の欄に文字で入力してください');
     let stream: MediaStream;
@@ -260,6 +337,23 @@ export function InterpretScreen() {
       const heard = live && !live.failed() ? (await (liveStopRef.current ?? live.stop())).trim() : '';
       liveStopRef.current = null;
       setLiveText('');
+      // 音声認識が使えたかを記録する。録音と同時に使えない端末なら、次から音声認識だけで動かす
+      if (!live) {
+        setLiveStatus('この端末では音声認識が使えません（家の PC で文字にします）');
+      } else if (heard) {
+        setLiveStatus('使えています');
+        localStorage.removeItem(LIVE_MISS_KEY);
+      } else if (blob.size > 0 && durationMs > 1500) {
+        const err = live.error();
+        const misses = Number(localStorage.getItem(LIVE_MISS_KEY) ?? '0') + 1;
+        localStorage.setItem(LIVE_MISS_KEY, String(misses));
+        if (err === 'audio-capture' || err === 'aborted' || misses >= 2) {
+          setLiveOnly(true);
+          setLiveStatus(`録音と同時に使えませんでした（${err ?? '聞き取りなし'}）。次から音声認識だけで動かします`);
+        } else {
+          setLiveStatus(`使えませんでした（${err ?? '聞き取りなし'}）。家の PC で文字にします`);
+        }
+      }
       if (heard) {
         await enqueue({
           id: newId(),
@@ -305,6 +399,11 @@ export function InterpretScreen() {
   };
 
   const stopRec = () => {
+    if (stopLiveOnlyRef.current) {
+      const f = stopLiveOnlyRef.current;
+      stopLiveOnlyRef.current = null;
+      return f();
+    }
     vadRef.current?.();
     vadRef.current = null;
     // 音声認識と録音を同時に止める（認識の最後の文字を取りこぼさない）
@@ -355,6 +454,16 @@ export function InterpretScreen() {
         <span>{recording ? `止めて訳す ${formatDuration(elapsed)}` : '押して話す'}</span>
       </button>
       {recording && liveText && <p className="live-text">{liveText}</p>}
+      {liveStatus && (
+        <p className="small muted live-status">
+          高速モード：{liveStatus}
+          {liveOnly && (
+            <button className="link" onClick={() => setLiveOnly(false)}>
+              録音もする方式に戻す
+            </button>
+          )}
+        </p>
+      )}
       {error && <p className="error-box">{error}</p>}
 
       <div className="add-row">
@@ -624,7 +733,9 @@ function BigCard({
   onEdit: (text: string) => void;
 }) {
   const { toast } = useApp();
-  const [flip, setFlip] = useState(false);
+  // 見せ方：none＝まだ見せていない、face＝向かいの人に（上下反転）、side＝隣の人に（向きはそのまま）
+  const [show, setShow] = useState<'none' | 'face' | 'side'>('none');
+  const flip = show === 'face';
   const [details, setDetails] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
@@ -633,7 +744,7 @@ function BigCard({
   const t = item.targetText ?? '';
   const lang: 'ja' | 'id' = (item.targetLang as 'ja' | 'id') ?? (item.mode === 'id-ja' ? 'ja' : 'id');
   const userSpoke = item.mode === 'ja-id' || (item.mode === 'auto' && item.sourceLang === 'ja');
-  const phase: 'check' | 'show' | 'read' = flip ? 'show' : userSpoke ? 'check' : 'read';
+  const phase: 'check' | 'show' | 'read' = show !== 'none' ? 'show' : userSpoke ? 'check' : 'read';
 
   // 枠に収まる最大の文字の大きさを探す（画面の向きや大きさが変わったら探し直す）
   const fit = useCallback(() => {
@@ -743,9 +854,14 @@ function BigCard({
           <button className={'btn check-retry' + (reply.recording ? ' on' : '')} onClick={() => (reply.recording ? reply.stop() : onRetry())}>
             {reply.recording ? `■ 終わり ${formatDuration(reply.elapsed)}` : '🎤 言い直す'}
           </button>
-          <button className="btn primary check-show" disabled={!t || reply.recording} onClick={() => setFlip(true)}>
-            ↻ 見せる
-          </button>
+          <div className="check-show-pair">
+            <button className="btn primary check-show" disabled={!t || reply.recording} onClick={() => setShow('face')}>
+              ↻ 向かいに見せる
+            </button>
+            <button className="btn check-show-side" disabled={!t || reply.recording} onClick={() => setShow('side')}>
+              → 隣に見せる
+            </button>
+          </div>
         </div>
         <div className="bigcard-actions">
           <span className="bigcard-spacer" />
@@ -812,8 +928,8 @@ function BigCard({
         </div>
       )}
       <div className="bigcard-actions">
-        {flip && (
-          <button className="bigcard-show on" onClick={() => setFlip(false)}>
+        {show !== 'none' && (
+          <button className="bigcard-show on" onClick={() => setShow('none')}>
             ↺ 戻す
           </button>
         )}

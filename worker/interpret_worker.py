@@ -214,18 +214,24 @@ def transcribe(audio_file: Path, mode: str) -> tuple[str, str]:
             return lang, tries[lang][1]
         log(f"言語判定 ja={pj:.2f} 最有力={top} → {lang}")
     result = model.transcribe(str(audio_file), language=lang, fp16=True, condition_on_previous_text=False)
-    return lang, (result.get("text") or "").strip()
+    text = (result.get("text") or "").strip()
+    # インドネシア語と指定されても、日本語の文字で出てきたら日本語として扱う（Jawab で日本語を話した など）
+    if lang == "id" and JA_RE.search(text):
+        log("指定はインドネシア語だが日本語として聞き取れたので、日本語として訳します")
+        lang = "ja"
+    return lang, text
 
 
 JA_RE = re.compile(r"[぀-ヿ㐀-鿿]")
 
 
 def text_lang(text: str, mode: str) -> str:
+    # 文字に日本語が含まれていれば日本語（「尼→日」で日本語が入力された場合も）
+    if JA_RE.search(text):
+        return "ja"
     if mode == "ja-id":
         return "ja"
-    if mode == "id-ja":
-        return "id"
-    return "ja" if JA_RE.search(text) else "id"
+    return "id"
 
 
 # ---------- 翻訳 ----------

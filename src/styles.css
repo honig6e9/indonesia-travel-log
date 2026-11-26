@@ -304,3 +304,8 @@ p { margin: 6px 0; }
 .check-show { background: #b5462f; color: #fff; border-color: #b5462f; }
 .check-show:disabled { opacity: 0.4; }
 .bigcard .btn.ghost { color: #555; border-color: #ccc; }
+.check-show-pair { display: grid; grid-template-rows: 1fr 1fr; gap: 6px; }
+.check-show-pair .btn { min-height: 52px; font-size: 1.05rem; }
+.check-show-side { background: #fff; color: #b5462f; border: 2px solid #b5462f; font-weight: 800; border-radius: 16px; }
+.check-show-side:disabled { opacity: 0.4; }
+.live-status { margin: 0; }

@@ -190,6 +190,8 @@ export function recognizeOnce(lang: 'ja' | 'id'): { promise: Promise<string>; st
 export interface LiveRecognition {
   /** 止めて、聞き取れた文を返す（何も聞き取れなければ空文字） */
   stop: () => Promise<string>;
+  /** 音声認識のエラーの種類（audio-capture＝マイクの取り合い など）。なければ null */
+  error: () => string | null;
   /** 音声認識が使えなかった（マイクの取り合いなど） */
   failed: () => boolean;
 }
@@ -227,8 +229,10 @@ export function startLiveRecognition(lang: 'ja' | 'id', onText: (text: string, s
     // settled：途中の文がなく、確定した文だけになった
     onText(current(), !mid.trim());
   };
+  let lastError: string | null = null;
   rec.onerror = (e) => {
-    if (e.error !== 'no-speech' && e.error !== 'aborted') failed = true;
+    lastError = e.error;
+    if (e.error !== 'no-speech') failed = true;
   };
   rec.onend = () => {
     ended = true;
@@ -242,6 +246,7 @@ export function startLiveRecognition(lang: 'ja' | 'id', onText: (text: string, s
   }
   return {
     failed: () => failed,
+    error: () => lastError,
     stop: () =>
       new Promise<string>((resolve) => {
         stopping = true;
