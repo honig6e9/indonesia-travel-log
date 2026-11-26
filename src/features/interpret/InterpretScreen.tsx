@@ -28,6 +28,62 @@ import {
 } from './interpretRepo';
 
 const MAX_MS = 60_000;
+/** 話し始めたあと、この長さだけ静かなら止める */
+const SILENCE_MS = 900;
+/** 音声認識で文が確定したあと、この長さだけ続きがなければ止める */
+const RECOGNITION_PAUSE_MS = 700;
+
+/**
+ * マイクの音量を見て、話し終えた（話し始めたあと静かになった）ら onSilence を呼ぶ。
+ * 最初の 0.3 秒で周りの音の大きさを測り、その数倍を「話している」とみなす。戻り値は止める関数。
+ */
+function watchSilence(stream: MediaStream, onSilence: () => void): () => void {
+  const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AC) return () => undefined;
+  const ac = new AC();
+  const src = ac.createMediaStreamSource(stream);
+  const an = ac.createAnalyser();
+  an.fftSize = 1024;
+  src.connect(an);
+  const buf = new Float32Array(an.fftSize);
+  const t0 = Date.now();
+  let floor = 0;
+  let floorN = 0;
+  let spoke = false;
+  let lastLoud = Date.now();
+  const timer = window.setInterval(() => {
+    an.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    const rms = Math.sqrt(sum / buf.length);
+    const now = Date.now();
+    if (now - t0 < 300) {
+      floor = (floor * floorN + rms) / ++floorN;
+      return;
+    }
+    const loud = rms > Math.max(0.015, floor * 3);
+    if (loud) {
+      spoke = true;
+      lastLoud = now;
+    } else if (spoke && now - lastLoud > SILENCE_MS) {
+      stop();
+      onSilence();
+    }
+  }, 50);
+  let done = false;
+  const stop = () => {
+    if (done) return;
+    done = true;
+    window.clearInterval(timer);
+    try {
+      src.disconnect();
+    } catch {
+      /* 切断済み */
+    }
+    void ac.close().catch(() => undefined);
+  };
+  return stop;
+}
 const MODE_LABEL: Record<Mode, string> = { auto: '自動', 'ja-id': '日→尼', 'id-ja': '尼→日' };
 
 function ago(iso: string | null) {
@@ -60,6 +116,7 @@ export function InterpretScreen() {
   const liveRef = useRef<LiveRecognition | null>(null);
   const liveStopRef = useRef<Promise<string> | null>(null);
   const [liveText, setLiveText] = useState('');
+  const vadRef = useRef<(() => void) | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const startRef = useRef(0);
 
@@ -172,13 +229,26 @@ export function InterpretScreen() {
     // 話しながら文字にする言語：「尼→日」と Jawab はインドネシア語、それ以外は日本語
     const liveLang: 'ja' | 'id' = recMode === 'id-ja' ? 'id' : 'ja';
     liveStopRef.current = null;
-    liveRef.current = startLiveRecognition(liveLang, setLiveText, () => stopRef.current());
+    // 音声認識で文が確定してから少し続きがなければ、話し終えたとみなして止める
+    let pauseTimer: number | null = null;
+    liveRef.current = startLiveRecognition(
+      liveLang,
+      (text, settled) => {
+        setLiveText(text);
+        if (pauseTimer) window.clearTimeout(pauseTimer);
+        if (settled && text) pauseTimer = window.setTimeout(() => stopRef.current(), RECOGNITION_PAUSE_MS);
+      },
+      () => stopRef.current(),
+    );
+    vadRef.current = watchSilence(stream, () => stopRef.current());
     streamRef.current = stream;
     const mr = new MediaRecorder(stream, fmt.mimeType ? { mimeType: fmt.mimeType, audioBitsPerSecond: 64000 } : undefined);
     const chunks: Blob[] = [];
     const mimeType = mr.mimeType || fmt.mimeType || 'audio/webm';
     mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     mr.onstop = async () => {
+      vadRef.current?.();
+      vadRef.current = null;
       stream.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       setRecording(false);
@@ -235,6 +305,8 @@ export function InterpretScreen() {
   };
 
   const stopRec = () => {
+    vadRef.current?.();
+    vadRef.current = null;
     // 音声認識と録音を同時に止める（認識の最後の文字を取りこぼさない）
     if (liveRef.current && !liveStopRef.current) liveStopRef.current = liveRef.current.stop();
     const mr = mediaRef.current;
@@ -620,11 +692,12 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
         </div>
       )}
       <div className="bigcard-actions">
+        <button className={'bigcard-show' + (flip ? ' on' : '')} onClick={() => setFlip((f) => !f)} aria-pressed={flip}>
+          {flip ? '↺ 戻す' : '↻ 見せる'}
+        </button>
+        <span className="bigcard-spacer" />
         <button className="bigcard-icon" aria-label="読み上げ" onClick={() => !speak(t, lang) && toast('この端末では読み上げられません')}>
           🔊
-        </button>
-        <button className="bigcard-icon" aria-label="向きを変える" onClick={() => setFlip((f) => !f)}>
-          ↻
         </button>
         {item.reading && (
           <button className={'bigcard-icon' + (details ? ' on' : '')} aria-label="読み方" onClick={() => setDetails((d) => !d)}>

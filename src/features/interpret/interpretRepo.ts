@@ -198,7 +198,7 @@ export interface LiveRecognition {
  * 話している間から文字にする（Chrome の音声認識。音声は Google に送られる。通信が必要）。
  * onText には途中経過を含めた全文を渡す。話し終えて認識が自然に終わったら onEnd を呼ぶ。
  */
-export function startLiveRecognition(lang: 'ja' | 'id', onText: (text: string) => void, onEnd: () => void): LiveRecognition | null {
+export function startLiveRecognition(lang: 'ja' | 'id', onText: (text: string, settled: boolean) => void, onEnd: () => void): LiveRecognition | null {
   const w = window as unknown as { SpeechRecognition?: new () => Recognition & { continuous: boolean }; webkitSpeechRecognition?: new () => Recognition & { continuous: boolean } };
   const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!Ctor) return null;
@@ -224,7 +224,8 @@ export function startLiveRecognition(lang: 'ja' | 'id', onText: (text: string) =
     }
     finalText = fin;
     interim = mid;
-    onText(current());
+    // settled：途中の文がなく、確定した文だけになった
+    onText(current(), !mid.trim());
   };
   rec.onerror = (e) => {
     if (e.error !== 'no-speech' && e.error !== 'aborted') failed = true;

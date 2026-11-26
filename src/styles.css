@@ -272,7 +272,10 @@ p { margin: 6px 0; }
 .bigcard-details { border-top: 1px solid #ddd; padding: 8px 4px; max-height: 30vh; overflow: auto; }
 .bigcard-reading { margin: 0 0 4px; font-size: 1.15rem; color: #8a4b00; }
 .bigcard-source { margin: 0; font-size: 1rem; color: #666; }
-.bigcard-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.bigcard-actions { display: flex; align-items: center; gap: 4px; }
+.bigcard-spacer { flex: 1; }
+.bigcard-show { min-height: 48px; padding: 0 18px; border-radius: 999px; border: 2px solid #b5462f; background: #fff; color: #b5462f; font-size: 1.1rem; font-weight: 800; cursor: pointer; }
+.bigcard-show.on { background: #b5462f; color: #fff; }
 .bigcard-icon { min-width: 44px; min-height: 44px; border: none; background: transparent; color: #aaa; font-size: 1.3rem; border-radius: 10px; cursor: pointer; }
 .bigcard-icon.on { color: #b5462f; background: #f6ece8; }
 .add-row .btn { white-space: nowrap; }
