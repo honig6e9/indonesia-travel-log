@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '../../app/context';
 import { Field } from '../../components/ui';
-import { downloadBlob, shareBlob } from '../../lib/download';
+import { SaveZipActions } from '../../components/SaveZipActions';
 import { formatBytes } from '../../lib/format';
 import { resizeImage } from '../../lib/image';
 import { allTags, loadTripData } from '../history/historyData';
@@ -76,10 +76,7 @@ export function ExportSection() {
         {result && (
           <div className="result">
             <p>{result.name}（{formatBytes(result.blob.size)}）</p>
-            <div className="actions">
-              <button className="btn" onClick={() => downloadBlob(result.blob, result.name)}>ダウンロード</button>
-              <button className="btn" onClick={async () => { if (!(await shareBlob(result.blob, result.name))) toast('この端末では共有できません'); }}>共有</button>
-            </div>
+            <SaveZipActions blob={result.blob} name={result.name} />
           </div>
         )}
       </section>

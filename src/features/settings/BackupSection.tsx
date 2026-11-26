@@ -12,7 +12,7 @@ import {
 } from '../../db/db';
 import { formatBytes } from '../../lib/format';
 import { stampIn } from '../../lib/dates';
-import { downloadBlob, shareBlob } from '../../lib/download';
+import { SaveZipActions } from '../../components/SaveZipActions';
 import { listTrips } from '../daily/tripRepo';
 import { backupPreflight, buildBackup, copyTripAsNew, restoreInto, validateBackup, type ValidatedBackup } from './backup';
 
@@ -68,17 +68,7 @@ export function BackupSection() {
             <p>
               {result.name}（{formatBytes(result.blob.size)}）{result.partial && <strong>部分バックアップ</strong>}
             </p>
-            <div className="actions">
-              <button className="btn" onClick={() => downloadBlob(result.blob, result.name)}>ダウンロード</button>
-              <button
-                className="btn"
-                onClick={async () => {
-                  if (!(await shareBlob(result.blob, result.name))) toast('この端末では共有できません。ダウンロードを使ってください');
-                }}
-              >
-                共有（ドライブなどへ）
-              </button>
-            </div>
+            <SaveZipActions blob={result.blob} name={result.name} />
             <p className="muted small">ダウンロードを始めただけでは、PC やクラウドへの退避は終わっていません。保存先で確かめたら、下のボタンで記録してください。ZIP は暗号化していないので、安全な場所に保管してください。</p>
           </div>
         )}

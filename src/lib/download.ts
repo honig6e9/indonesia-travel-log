@@ -10,16 +10,3 @@ export function downloadBlob(blob: Blob, filename: string) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
-
-/** 共有シート（Android では Google ドライブなどへ送れる）。使えなければ false */
-export async function shareBlob(blob: Blob, filename: string): Promise<boolean> {
-  const file = new File([blob], filename, { type: blob.type || 'application/zip' });
-  const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
-  if (!nav.share || !nav.canShare?.({ files: [file] })) return false;
-  try {
-    await nav.share({ files: [file], title: filename });
-    return true;
-  } catch {
-    return false;
-  }
-}
