@@ -68,6 +68,12 @@ export function InterpretScreen() {
     }
   }, [current]);
 
+  // 全画面を開き直したら、前のエラー表示は消す
+  const bigId = big?.id;
+  useEffect(() => {
+    if (bigId) setError(null);
+  }, [bigId]);
+
   // PC の応答状況・履歴の取り込み・未送信の再送
   const sendPending = useCallback(async () => {
     if (!canUsePc || !supabase) return;
@@ -141,7 +147,7 @@ export function InterpretScreen() {
     }
   };
 
-  const startRec = async () => {
+  const startRec = async (recMode: Mode = mode) => {
     setError(null);
     const fmt = pickAudioFormat();
     if (!fmt) return setError('この端末では録音できません。下の欄に文字で入力してください');
@@ -166,7 +172,7 @@ export function InterpretScreen() {
       await enqueue({
         id: newId(),
         createdAt: new Date().toISOString(),
-        mode,
+        mode: recMode,
         audio: blob,
         mimeType,
         ext: extForMime(mimeType, fmt.ext),
@@ -266,7 +272,22 @@ export function InterpretScreen() {
         </p>
       )}
       <p className="small muted">相手の声を録るときは、相手の了解をとってください。音声と訳はご自身の Supabase と家の PC に保存されます。</p>
-      {big && <BigCard item={big} onClose={() => setBig(null)} />}
+      {big && (
+        <BigCard
+          key={big.id}
+          item={big}
+          onClose={() => setBig(null)}
+          reply={{
+            recording,
+            elapsed,
+            error,
+            pending: current && current.id !== big.id && current.status !== 'done' ? current : null,
+            // 返事は、表示中の訳の言語で話してもらい、反対向きに訳す
+            start: () => void startRec(big.targetLang === 'ja' ? 'ja-id' : 'id-ja'),
+            stop: stopRec,
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -412,7 +433,44 @@ function Fallback({ item, mode, reason }: { item: Interpretation | null; mode: M
  * 相手に見せるための全画面表示。訳文だけを、画面に収まる最大の文字で出す。
  * 読み方・元の文・操作は目立たない小さなボタンにまとめ、必要なときだけ開く。
  */
-function BigCard({ item, onClose }: { item: Interpretation; onClose: () => void }) {
+interface ReplyControls {
+  recording: boolean;
+  elapsed: number;
+  error: string | null;
+  pending: Interpretation | null;
+  start: () => void;
+  stop: () => void;
+}
+
+/**
+ * 日本語を文節に近いかたまりに分ける（Intl.Segmenter の単語に、助詞・句読点などをくっつける）。
+ * 全画面ではかたまりの途中で改行しないので、「だいた / い」のような切れ方をしない。
+ */
+export function japaneseChunks(text: string): string[] {
+  const Seg = (Intl as unknown as { Segmenter?: new (l: string, o: { granularity: string }) => { segment: (t: string) => Iterable<{ segment: string; isWordLike?: boolean }> } }).Segmenter;
+  if (!Seg) return [text];
+  const out: string[] = [];
+  const attach = /^([ぁ-ゖー]{1,3}|[、。！？!?・…」』）)]+)$/;
+  for (const { segment } of new Seg('ja', { granularity: 'word' }).segment(text)) {
+    const prev = out[out.length - 1];
+    if (/^\s+$/.test(segment)) {
+      out.push(segment); // 空白はそのまま区切りにする
+      continue;
+    }
+    // 助詞・句読点と、数字のあとの単位（20分）は前のかたまりにくっつける
+    if (prev && !/^\s+$/.test(prev) && (attach.test(segment) || /[0-9０-９]$/.test(prev))) out[out.length - 1] = prev + segment;
+    else out.push(segment);
+  }
+  return out;
+}
+
+/** 返事のボタンの文字は、表示中の訳の言語（＝返事をする人の言語）で書く */
+const REPLY_TEXT = {
+  id: { start: 'Jawab', stop: 'Selesai', wait: 'Sedang menerjemahkan…', fail: 'Maaf, belum bisa diterjemahkan. Coba lagi.' },
+  ja: { start: '答える', stop: '終わり', wait: '訳しています…', fail: '訳せませんでした。もう一度どうぞ' },
+};
+
+function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () => void; reply: ReplyControls }) {
   const { toast } = useApp();
   const [flip, setFlip] = useState(false);
   const [details, setDetails] = useState(false);
@@ -426,15 +484,28 @@ function BigCard({ item, onClose }: { item: Interpretation; onClose: () => void 
     const box = boxRef.current;
     const el = textRef.current;
     if (!box || !el) return;
-    let lo = 16;
-    let hi = 480;
-    while (hi - lo > 1) {
-      const mid = Math.floor((lo + hi) / 2);
-      el.style.fontSize = `${mid}px`;
-      if (el.scrollHeight <= box.clientHeight && el.scrollWidth <= box.clientWidth) lo = mid;
-      else hi = mid;
+    const largest = () => {
+      let lo = 16;
+      let hi = 480;
+      while (hi - lo > 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        el.style.fontSize = `${mid}px`;
+        if (el.scrollHeight <= box.clientHeight && el.scrollWidth <= box.clientWidth) lo = mid;
+        else hi = mid;
+      }
+      return lo;
+    };
+    // 日本語：文節の途中で折り返さない並べ方を試し、文字が 2 割以上小さくなるなら普通に折り返す
+    el.classList.remove('chunked');
+    const free = largest();
+    let size = free;
+    if (el.querySelector('.nowrap')) {
+      el.classList.add('chunked');
+      const chunked = largest();
+      if (chunked >= free * 0.8) size = chunked;
+      else el.classList.remove('chunked');
     }
-    el.style.fontSize = `${lo}px`;
+    el.style.fontSize = `${size}px`;
   }, []);
 
   useLayoutEffect(() => {
@@ -454,12 +525,36 @@ function BigCard({ item, onClose }: { item: Interpretation; onClose: () => void 
     };
   }, [onClose, fit]);
 
+  const rt = REPLY_TEXT[lang];
+  const failed = reply.pending?.status === 'error' || (!!reply.error && !reply.recording);
   return (
     <div className="bigcard" role="dialog" aria-modal="true" aria-label="訳文">
-      <div ref={boxRef} className={'bigcard-body' + (flip ? ' flip' : '')}>
-        <p ref={textRef} className="bigcard-target" lang={lang}>
-          {t}
-        </p>
+      <div className={'bigcard-main' + (flip ? ' flip' : '')}>
+        <div ref={boxRef} className="bigcard-body">
+          <p ref={textRef} className="bigcard-target" lang={lang}>
+            {lang === 'ja'
+              ? japaneseChunks(t).map((c, i) => (
+                  <span key={i} className="nowrap">
+                    {c}
+                  </span>
+                ))
+              : t}
+          </p>
+        </div>
+        <div className="bigcard-reply" lang={lang}>
+          {reply.pending && reply.pending.status !== 'error' ? (
+            <p className="bigcard-wait">{rt.wait}</p>
+          ) : (
+            <button
+              className={'bigcard-mic' + (reply.recording ? ' on' : '')}
+              onClick={() => (reply.recording ? reply.stop() : reply.start())}
+              aria-label={reply.recording ? rt.stop : rt.start}
+            >
+              <span aria-hidden>{reply.recording ? '■' : '🎤'}</span> {reply.recording ? `${rt.stop} ${formatDuration(reply.elapsed)}` : rt.start}
+            </button>
+          )}
+          {failed && <p className="bigcard-fail">{rt.fail}</p>}
+        </div>
       </div>
       {details && (
         <div className="bigcard-details">
@@ -477,7 +572,7 @@ function BigCard({ item, onClose }: { item: Interpretation; onClose: () => void 
         <button className={'bigcard-icon' + (details ? ' on' : '')} aria-label="読み方と元の文" onClick={() => setDetails((d) => !d)}>
           {item.reading ? 'ア' : '元'}
         </button>
-        <button className="bigcard-icon" aria-label="閉じる" onClick={onClose}>
+        <button className="bigcard-icon" aria-label="閉じる" onClick={onClose} disabled={reply.recording}>
           ✕
         </button>
       </div>
