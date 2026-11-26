@@ -309,3 +309,15 @@ p { margin: 6px 0; }
 .check-show-side { background: #fff; color: #b5462f; border: 2px solid #b5462f; font-weight: 800; border-radius: 16px; }
 .check-show-side:disabled { opacity: 0.4; }
 .live-status { margin: 0; }
+/* よく使う */
+.favorites { display: flex; flex-direction: column; gap: 4px; }
+.favorites p { margin: 0; }
+.fav-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.fav-chip { flex: none; max-width: 70%; min-height: 56px; text-align: left; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+.fav-main { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fav-sub { font-size: 0.8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.interp-li { display: flex; align-items: stretch; gap: 2px; }
+.interp-li .row-btn { flex: 1; }
+.interp-li .star { flex: none; min-width: 44px; color: var(--muted); }
+.interp-li .star.on { color: #e3a008; }
+.bigcard-icon.fav-on { color: #e3a008; }

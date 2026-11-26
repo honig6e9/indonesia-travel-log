@@ -113,6 +113,12 @@ export function InterpretScreen() {
   const [elapsed, setElapsed] = useState(0);
   const [text, setText] = useState('');
   const [big, setBig] = useState<Interpretation | null>(null);
+  // よく使う文は「隣に見せる」状態ですぐ出す
+  const [bigInit, setBigInit] = useState<'none' | 'side'>('none');
+  const openBig = (it: Interpretation, init: 'none' | 'side' = 'none') => {
+    setBigInit(init);
+    setBig(it);
+  };
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const mediaRef = useRef<MediaRecorder | null>(null);
@@ -146,9 +152,39 @@ export function InterpretScreen() {
     // 聞き取りが出た時点ですぐ開く（確かめる画面）。訳は届きしだい同じ画面に出る
     if (current && current.id === autoShowRef.current && (current.sourceText || current.targetText)) {
       autoShowRef.current = null;
+      setBigInit('none');
       setBig(current);
     }
   }, [current]);
+
+  // 全画面を開いたら履歴に 1 つ積み、スマホの「戻る」では全画面だけを閉じる（通訳の画面に戻る）
+  const bigOpen = !!big;
+  const pushedRef = useRef(false);
+  useEffect(() => {
+    if (!bigOpen) {
+      pushedRef.current = false;
+      return;
+    }
+    if (!pushedRef.current) {
+      history.pushState({ itlBig: true }, '', location.hash);
+      pushedRef.current = true;
+    }
+    const onPop = () => {
+      pushedRef.current = false;
+      setBig(null);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [bigOpen]);
+  // ✕ で閉じるときも、積んだ分を戻す（戻ると popstate で閉じる）
+  const closeBig = () => {
+    if (pushedRef.current && (history.state as { itlBig?: boolean } | null)?.itlBig) history.back();
+    else setBig(null);
+  };
+
+  // よく使う（☆）
+  const favorites = useLiveQuery(() => db.interpretations.filter((i) => !!i.favorite).toArray(), [db]) ?? [];
+  const toggleFavorite = (it: Interpretation) => void db.interpretations.update(it.id, { favorite: !it.favorite });
 
   // 全画面を開き直したら、前のエラー表示は消す
   const bigId = big?.id;
@@ -448,6 +484,20 @@ export function InterpretScreen() {
         ))}
       </div>
 
+      {favorites.length > 0 && (
+        <section className="favorites" aria-label="よく使う">
+          <p className="small muted">☆ よく使う（押すとすぐ見せられます）</p>
+          <div className="fav-list">
+            {favorites.map((f) => (
+              <button key={f.id} className="fav-chip" onClick={() => openBig(f, 'side')}>
+                <span className="fav-main">{displayText(f)}</span>
+                {f.sourceText && displayText(f) !== f.sourceText && <span className="fav-sub">{f.sourceText}</span>}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       <button
         className={'mic-big' + (recording ? ' on' : '')}
         onClick={() => (recording ? stopRec() : void startRec())}
@@ -475,7 +525,7 @@ export function InterpretScreen() {
         <button className="btn primary" onClick={() => void sendText()}>訳す</button>
       </div>
 
-      {current && <ResultCard item={current} onBig={() => setBig(current)} />}
+      {current && <ResultCard item={current} onBig={() => openBig(current)} />}
 
       {(pcDown || stuck) && <Fallback item={current} mode={mode} reason={!canUsePc ? 'login' : stuck ? 'stuck' : 'down'} />}
 
@@ -485,8 +535,16 @@ export function InterpretScreen() {
       ) : (
         <ul className="list">
           {items.map((it) => (
-            <li key={it.id}>
-              <button className="row-btn interp-row" onClick={() => (it.targetText ? setBig(it) : setCurrentId(it.id))}>
+            <li key={it.id} className="interp-li">
+              <button
+                className={'star' + (it.favorite ? ' on' : '')}
+                aria-label={it.favorite ? 'よく使うから外す' : 'よく使うに入れる'}
+                aria-pressed={!!it.favorite}
+                onClick={() => toggleFavorite(it)}
+              >
+                {it.favorite ? '★' : '☆'}
+              </button>
+              <button className="row-btn interp-row" onClick={() => (it.targetText ? openBig(it) : setCurrentId(it.id))}>
                 <span className="small muted">
                   {new Date(it.createdAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}　{statusLabel(it)}
                 </span>
@@ -507,7 +565,9 @@ export function InterpretScreen() {
         <BigCard
           key={liveBig.id}
           item={liveBig}
-          onClose={() => setBig(null)}
+          onClose={closeBig}
+          initialShow={bigInit}
+          onToggleFavorite={() => toggleFavorite(liveBig)}
           // 言い直す：同じ向きでもう一度話す（自動のときは日本語として）
           onRetry={() => void startRec(liveBig.mode === 'auto' ? 'ja-id' : liveBig.mode, 'me')}
           // 直す：直した文で訳し直す
@@ -713,6 +773,31 @@ export function japaneseChunks(text: string): string[] {
   return out;
 }
 
+/** 全画面に大きく出す文：自分の発言は相手向け（インドネシア語）、相手の発言は自分向け（日本語） */
+function displayText(item: Interpretation): string {
+  const speaker = item.speaker ?? (item.mode === 'id-ja' ? 'them' : 'me');
+  const lang = speaker === 'them' ? 'ja' : 'id';
+  return (item.sourceLang === lang ? item.sourceText : item.targetText) ?? item.targetText ?? item.sourceText ?? '';
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // 古い仕組みでコピーする
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  }
+}
+
 /** 返事のボタンの文字は、表示中の訳の言語（＝返事をする人の言語）で書く */
 const REPLY_TEXT = {
   id: { start: 'Jawab', stop: 'Selesai', wait: 'Sedang menerjemahkan…', fail: 'Maaf, belum bisa diterjemahkan. Coba lagi.' },
@@ -731,16 +816,20 @@ function BigCard({
   reply,
   onRetry,
   onEdit,
+  initialShow = 'none',
+  onToggleFavorite,
 }: {
   item: Interpretation;
   onClose: () => void;
   reply: ReplyControls;
   onRetry: () => void;
   onEdit: (text: string) => void;
+  initialShow?: 'none' | 'side';
+  onToggleFavorite: () => void;
 }) {
   const { toast } = useApp();
   // 見せ方：none＝まだ見せていない、face＝向かいの人に（上下反転）、side＝隣の人に（向きはそのまま）
-  const [show, setShow] = useState<'none' | 'face' | 'side'>('none');
+  const [show, setShow] = useState<'none' | 'face' | 'side'>(initialShow);
   const flip = show === 'face';
   const [details, setDetails] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -943,6 +1032,12 @@ function BigCard({
           </button>
         )}
         <span className="bigcard-spacer" />
+        <button className="bigcard-icon" aria-label="訳文をコピー" onClick={() => void copyText(t).then((ok) => toast(ok ? 'コピーしました' : 'コピーできませんでした'))} disabled={!t}>
+          📋
+        </button>
+        <button className={'bigcard-icon' + (item.favorite ? ' fav-on' : '')} aria-label={item.favorite ? 'よく使うから外す' : 'よく使うに入れる'} onClick={onToggleFavorite}>
+          {item.favorite ? '★' : '☆'}
+        </button>
         <button className="bigcard-icon" aria-label="読み上げ" onClick={() => !speak(t, lang) && toast('この端末では読み上げられません')} disabled={!t}>
           🔊
         </button>
