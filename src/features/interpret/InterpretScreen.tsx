@@ -32,6 +32,68 @@ const MAX_MS = 60_000;
 const LIVE_ONLY_KEY = 'itl-live-only';
 const LIVE_STATUS_KEY = 'itl-live-status';
 const LIVE_MISS_KEY = 'itl-live-miss';
+/** 高速モードで録音も一緒にするか（同時に使えない端末では off にする） */
+const LIVE_REC_KEY = 'itl-live-rec';
+const LIVE_REC_MISS_KEY = 'itl-live-rec-miss';
+/** 録音がこれより小さい音しか拾えていなければ、無音（マイクを取り合って録れていない）とみなす */
+const SILENT_PEAK = 0.02;
+
+/**
+ * 音声認識と並べて録音する（高速モード用）。音声認識がマイクをつかんでから始めるので、
+ * 端末によっては無音しか録れない。そのときは peak が小さくなるので、呼び出し側で捨てる。
+ */
+interface SideRecording {
+  stop: () => Promise<{ blob: Blob; mimeType: string; ext: string; peak: number } | null>;
+}
+async function startSideRecording(): Promise<SideRecording | null> {
+  const fmt = pickAudioFormat();
+  if (!fmt) return null;
+  let stream: MediaStream;
+  try {
+    stream = await openMic();
+  } catch {
+    return null;
+  }
+  const mr = new MediaRecorder(stream, fmt.mimeType ? { mimeType: fmt.mimeType, audioBitsPerSecond: 64000 } : undefined);
+  const mimeType = mr.mimeType || fmt.mimeType || 'audio/webm';
+  const chunks: Blob[] = [];
+  mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  // 録れている音の大きさ（最大）を測る
+  let peak = 0;
+  const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  const ac = AC ? new AC() : null;
+  const an = ac?.createAnalyser();
+  const src = ac && an ? ac.createMediaStreamSource(stream) : null;
+  if (src && an) src.connect(an);
+  const buf = new Float32Array(an?.fftSize ?? 0);
+  const timer = an
+    ? window.setInterval(() => {
+        an.getFloatTimeDomainData(buf);
+        for (const v of buf) if (Math.abs(v) > peak) peak = Math.abs(v);
+      }, 60)
+    : null;
+  mr.start();
+  return {
+    stop: () =>
+      new Promise((resolve) => {
+        const done = () => {
+          if (timer) window.clearInterval(timer);
+          stream.getTracks().forEach((t) => t.stop());
+          void ac?.close().catch(() => undefined);
+          const blob = new Blob(chunks, { type: mimeType });
+          resolve(blob.size ? { blob, mimeType, ext: extForMime(mimeType, fmt.ext), peak: an ? peak : 1 } : null);
+        };
+        if (mr.state === 'inactive') return done();
+        mr.onstop = done;
+        try {
+          mr.stop();
+        } catch {
+          done();
+        }
+      }),
+  };
+}
+
 /** 話し始めたあと、この長さだけ静かなら止める */
 const SILENCE_MS = 900;
 /** 音声認識で文が確定したあと、この長さだけ続きがなければ止める */
@@ -307,24 +369,53 @@ export function InterpretScreen() {
       if (liveTimerRef.current) window.clearInterval(liveTimerRef.current);
       const live = liveRef.current;
       liveRef.current = null;
-      const heard = live ? (await live.stop()).trim() : '';
+      if (sideTimer) window.clearTimeout(sideTimer);
+      const [heardRaw, audio] = await Promise.all([live ? live.stop() : Promise.resolve(''), side ? side.then((s) => s?.stop() ?? null) : Promise.resolve(null)]);
+      const heard = heardRaw.trim();
       setRecording(false);
       setLiveText('');
+      const usable = !!audio && audio.peak >= SILENT_PEAK;
+      if (side) {
+        // 録音を一緒にしたら聞き取れなくなった・無音しか録れなかった、が 2 回続いたら、録音はやめる
+        if ((!heard && Date.now() - startRef.current > 1500) || (heard && !usable)) {
+          const misses = Number(localStorage.getItem(LIVE_REC_MISS_KEY) ?? '0') + 1;
+          localStorage.setItem(LIVE_REC_MISS_KEY, String(misses));
+          if (misses >= 2) localStorage.setItem(LIVE_REC_KEY, 'off');
+        } else if (heard && usable) {
+          localStorage.removeItem(LIVE_REC_MISS_KEY);
+        }
+      }
       if (!heard) {
         const err = live?.error();
         setLiveStatus(`音声認識だけで動かしています（直前：${err ?? '聞き取れませんでした'}）`);
         return setError('聞き取れませんでした。もう一度どうぞ');
       }
-      setLiveStatus('音声認識だけで動かしています（録音は残りません）');
+      setLiveStatus(
+        usable
+          ? '音声認識で動かしています（録音も残します）'
+          : localStorage.getItem(LIVE_REC_KEY) === 'off'
+            ? '音声認識だけで動かしています（この端末では同時に録音できないため、録音は残りません）'
+            : '音声認識だけで動かしています（今回は録音できませんでした）',
+      );
       await enqueue({
         id: newId(),
         createdAt: new Date().toISOString(),
         mode: liveLang === 'ja' ? 'ja-id' : 'id-ja',
         inputText: heard,
         sourceText: heard,
+        ...(usable && audio ? { audio: audio.blob, mimeType: audio.mimeType, ext: audio.ext, durationMs: Date.now() - startRef.current } : {}),
         status: 'local',
         via: 'pc',
       });
+    };
+    // 音声認識がマイクを使い始めてから録音を始める（先に録音すると音声認識が聞き取れない端末がある）
+    let side: Promise<SideRecording | null> | null = null;
+    let sideTimer: number | null = null;
+    const wantRec = localStorage.getItem(LIVE_REC_KEY) !== 'off';
+    const beginSide = () => {
+      if (!wantRec || side || finished) return;
+      if (sideTimer) window.clearTimeout(sideTimer);
+      side = startSideRecording();
     };
     const live = startLiveRecognition(
       liveLang,
@@ -334,8 +425,11 @@ export function InterpretScreen() {
         if (settled && text) pauseTimer = window.setTimeout(() => void finish(), RECOGNITION_PAUSE_MS);
       },
       () => void finish(),
+      beginSide,
     );
     if (!live) return false;
+    // 「マイクを使い始めた」合図が来ない端末では、少し待ってから始める
+    if (wantRec) sideTimer = window.setTimeout(beginSide, 600);
     liveRef.current = live;
     stopLiveOnlyRef.current = () => void finish();
     startRef.current = Date.now();
@@ -544,9 +638,21 @@ export function InterpretScreen() {
       {liveStatus && (
         <p className="small muted live-status">
           高速モード：{liveStatus}
+          {liveOnly && localStorage.getItem(LIVE_REC_KEY) === 'off' && (
+            <button
+              className="link"
+              onClick={() => {
+                localStorage.removeItem(LIVE_REC_KEY);
+                localStorage.removeItem(LIVE_REC_MISS_KEY);
+                setLiveStatus('音声認識で動かしています（次から録音も試します）');
+              }}
+            >
+              録音も試す
+            </button>
+          )}
           {liveOnly && (
             <button className="link" onClick={() => setLiveOnly(false)}>
-              録音もする方式に戻す
+              録音を先にする方式に戻す
             </button>
           )}
         </p>
