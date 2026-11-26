@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
 import traceback
 from pathlib import Path
@@ -58,6 +59,8 @@ PROVIDERS = [p.strip() for p in os.environ.get("PROVIDERS", "claude,codex,gemini
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "haiku")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
+OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "8192"))
+REFINE_WORKERS = int(os.environ.get("REFINE_WORKERS", "2"))
 POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "0.8"))
 BUCKET = "travel-media"
 
@@ -311,21 +314,24 @@ def via_claude(prompt: str) -> dict:
 
 
 def via_codex(prompt: str) -> dict:
-    schema_file = WORKDIR / "schema.json"
+    # 2 件を同時に訳すことがあるので、ファイル名は呼び出しごとに分ける
+    tag = f"{os.getpid()}-{threading.get_ident()}-{time.time_ns()}"
+    schema_file = WORKDIR / f"schema-{tag}.json"
     schema_file.write_text(json.dumps(SCHEMA), encoding="utf-8")
-    out_file = WORKDIR / f"codex-{os.getpid()}-{time.time_ns()}.txt"
-    run_cli(
-        [
-            "codex", "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only",
-            "--output-schema", str(schema_file), "-o", str(out_file), "-",
-        ],
-        prompt,
-        90,
-    )
+    out_file = WORKDIR / f"codex-{tag}.txt"
     try:
+        run_cli(
+            [
+                "codex", "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only",
+                "--output-schema", str(schema_file), "-o", str(out_file), "-",
+            ],
+            prompt,
+            90,
+        )
         return parse_json(out_file.read_text(encoding="utf-8"))
     finally:
         out_file.unlink(missing_ok=True)
+        schema_file.unlink(missing_ok=True)
 
 
 def via_gemini(prompt: str) -> dict:
@@ -341,8 +347,10 @@ def via_ollama(prompt: str) -> dict:
             "stream": False,
             "think": False,
             "format": SCHEMA,
-            "keep_alive": "30m",
-            "options": {"temperature": 0.2},
+            # 使っていない間も外さない（読み込み直しで最初の 1 回が遅くならないように）。
+            # num_ctx は WhatsApp 取り込みと同じ値にする（違うと、交互に使うたびに読み込み直しになる）
+            "keep_alive": "24h",
+            "options": {"temperature": 0.2, "num_ctx": OLLAMA_NUM_CTX},
             "messages": [{"role": "user", "content": prompt}],
         },
         timeout=180,
@@ -435,19 +443,55 @@ def process(job: dict) -> None:
             log(f"速い訳 ollama {time.time() - t1:.1f}s: {quick['translation']}")
         except Exception as e:
             log("速い訳に失敗:", str(e)[:200])
-    # 3. 優先順位の高い翻訳（Claude → ChatGPT → Gemini）で差し替える。全部だめなら速い訳で確定
-    errors: list[str] = []
+    # 3. 優先順位の高い翻訳（Claude → ChatGPT → Gemini）で差し替える。全部だめなら速い訳で確定。
+    #    速い訳が出ていれば、差し替えは別の作業として進め、次の通訳を待たせない
+    def refine() -> None:
+        errors: list[str] = []
+        try:
+            res, provider, errors = translate(src_lang, text, upper if quick else None)
+        except Exception as e:
+            if not quick:
+                raise
+            res, provider, errors = quick, "ollama", [str(e)[:300]]
+        fields = fields_for(res, provider, "done")
+        finish(jid, fields)
+        with _log_lock, (AUDIO_DIR / "log.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"id": jid, "created_at": job.get("created_at"), "mode": mode, **fields, "skipped": errors}, ensure_ascii=False) + "\n")
+        log(f"完了 {time.time() - t0:.1f}s {provider}: {res['translation']}")
+
+    if quick is None:
+        refine()
+        return
+
+    def refine_bg() -> None:
+        try:
+            refine()
+        except Exception as e:  # 速い訳があるので、それで確定する
+            log("差し替えに失敗:", str(e)[:200])
+            try:
+                finish(jid, fields_for(quick, "ollama", "done"))
+            except Exception:
+                pass
+
+    _refiners.submit(refine_bg)
+
+
+_refiners = ThreadPoolExecutor(max_workers=REFINE_WORKERS, thread_name_prefix="refine")
+_log_lock = threading.Lock()
+
+
+def warm_up() -> None:
+    """起動時にローカル LLM を読み込んでおく（最初の通訳を待たせない）"""
     try:
-        res, provider, errors = translate(src_lang, text, upper if quick else None)
+        t0 = time.time()
+        requests.post(
+            f"{OLLAMA_URL}/api/chat",
+            json={"model": OLLAMA_MODEL, "stream": False, "keep_alive": "24h", "options": {"num_ctx": OLLAMA_NUM_CTX, "num_predict": 1}, "messages": [{"role": "user", "content": "ok"}]},
+            timeout=180,
+        )
+        log(f"ローカル LLM の準備ができました（{time.time() - t0:.1f}s）")
     except Exception as e:
-        if not quick:
-            raise
-        res, provider, errors = quick, "ollama", [str(e)[:300]]
-    fields = fields_for(res, provider, "done")
-    finish(jid, fields)
-    with (AUDIO_DIR / "log.jsonl").open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"id": jid, "created_at": job.get("created_at"), "mode": mode, **fields, "skipped": errors}, ensure_ascii=False) + "\n")
-    log(f"完了 {time.time() - t0:.1f}s {provider}: {res['translation']}")
+        log("ローカル LLM を読み込めませんでした:", str(e)[:200])
 
 
 def fetch_jobs() -> list[dict]:
@@ -468,6 +512,8 @@ def main() -> int:
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
     log(f"通訳プログラムを起動しました（翻訳の順: {' → '.join(PROVIDERS)}、保存先: {AUDIO_DIR}）")
     whisper_model()
+    if "ollama" in PROVIDERS:
+        warm_up()
     stop = threading.Event()
     threading.Thread(target=heartbeat_loop, args=(stop,), daemon=True).start()
     threading.Thread(target=audio_sync_loop, args=(stop,), daemon=True).start()

@@ -75,7 +75,7 @@ ACTIONS = {"new": "新規", "append": "追記", "change": "変更", "cancel": "�
 SKIP_TYPES = {"e2e_notification", "notification_template", "gp2", "revoked", "call_log", "sticker", "ptt", "audio", "unknown", "biz_content_placeholder"}
 
 WINDOW_TARGETS = 30  # 1 回に解析するメッセージ数
-WINDOW_CHARS = 6000  # 1 回に渡す本文の目安
+WINDOW_CHARS = 4000  # 1 回に渡す本文の目安（num_ctx 8192 に収める）
 CONTEXT_BEFORE = 8  # 前の文脈として添えるメッセージ数
 
 PHONE_RE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
@@ -321,9 +321,10 @@ def call_llm(cfg: dict, user: str, schema: dict) -> str:
         "stream": False,
         "format": schema,
         "think": False,
-        "keep_alive": "10m",
+        # 通訳プログラムと同じ設定にして、交互に使っても読み込み直しにならないようにする
+        "keep_alive": "24h",
         # 出力の上限：同じ内容を繰り返して止まらなくなるのを防ぐ
-        "options": {"temperature": 0, "num_ctx": 16384, "num_predict": 3072, "repeat_penalty": 1.1},
+        "options": {"temperature": 0, "num_ctx": 8192, "num_predict": 3072, "repeat_penalty": 1.1},
     }
     try:
         res = _post_json(base + "/api/chat", body, timeout)

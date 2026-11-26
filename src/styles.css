@@ -259,54 +259,54 @@ p { margin: 6px 0; }
 .result-card audio { width: 100%; }
 .waiting { font-weight: 600; }
 .interp-row { flex-direction: column !important; align-items: flex-start !important; }
-.bigcard { position: fixed; inset: 0; z-index: 80; background: #fff; color: #111; display: flex; flex-direction: column; padding: 12px 12px calc(8px + env(safe-area-inset-bottom)); }
+.bigcard { position: fixed; inset: 0; z-index: 80; background: var(--bg); color: var(--text); display: flex; flex-direction: column; padding: 12px 12px calc(8px + env(safe-area-inset-bottom)); }
 .bigcard-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .bigcard-main.flip { transform: rotate(180deg); }
 .bigcard-body { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 .bigcard-reply { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 4px; }
-.bigcard-mic { min-width: 70%; min-height: 64px; border-radius: 999px; border: none; background: #b5462f; color: #fff; font-size: 1.5rem; font-weight: 800; cursor: pointer; }
-.bigcard-mic.on { background: #d62d20; }
-.bigcard-wait { margin: 0; min-height: 64px; display: flex; align-items: center; font-size: 1.3rem; font-weight: 700; color: #555; }
-.bigcard-fail { margin: 0; font-size: 1rem; color: #b3261e; text-align: center; }
+.bigcard-mic { min-width: 70%; min-height: 64px; border-radius: 999px; border: none; background: var(--accent); color: var(--accent-text); font-size: 1.5rem; font-weight: 800; cursor: pointer; }
+.bigcard-mic.on { background: var(--rec); color: #fff; }
+.bigcard-wait { margin: 0; min-height: 64px; display: flex; align-items: center; font-size: 1.3rem; font-weight: 700; color: var(--muted); }
+.bigcard-fail { margin: 0; font-size: 1rem; color: var(--danger); text-align: center; }
 .bigcard-target { margin: 0; width: 100%; font-weight: 800; line-height: 1.18; text-align: center; overflow-wrap: normal; word-break: normal; hyphens: none; letter-spacing: 0.01em; }
-.bigcard-details { border-top: 1px solid #ddd; padding: 8px 4px; max-height: 30vh; overflow: auto; }
-.bigcard-reading { margin: 0 0 4px; font-size: 1.15rem; color: #8a4b00; }
-.bigcard-source { margin: 0; font-size: 1rem; color: #666; }
+.bigcard-details { border-top: 1px solid var(--line); padding: 8px 4px; max-height: 30vh; overflow: auto; }
+.bigcard-reading { margin: 0 0 4px; font-size: 1.15rem; color: var(--accent); }
+.bigcard-source { margin: 0; font-size: 1rem; color: var(--muted); }
 .bigcard-actions { display: flex; align-items: center; gap: 4px; }
 .bigcard-spacer { flex: 1; }
-.bigcard-show { min-height: 48px; padding: 0 18px; border-radius: 999px; border: 2px solid #b5462f; background: #fff; color: #b5462f; font-size: 1.1rem; font-weight: 800; cursor: pointer; }
-.bigcard-show.on { background: #b5462f; color: #fff; }
-.bigcard-icon { min-width: 44px; min-height: 44px; border: none; background: transparent; color: #aaa; font-size: 1.3rem; border-radius: 10px; cursor: pointer; }
-.bigcard-icon.on { color: #b5462f; background: #f6ece8; }
+.bigcard-show { min-height: 48px; padding: 0 18px; border-radius: 999px; border: 2px solid var(--accent); background: transparent; color: var(--accent); font-size: 1.1rem; font-weight: 800; cursor: pointer; }
+.bigcard-show.on { background: var(--accent); color: var(--accent-text); }
+.bigcard-icon { min-width: 44px; min-height: 44px; border: none; background: transparent; color: var(--muted); font-size: 1.3rem; border-radius: 10px; cursor: pointer; }
+.bigcard-icon.on { color: var(--accent); background: var(--chip); }
 .add-row .btn { white-space: nowrap; }
 /* 日本語は文節で改行する（Chrome 119 以降） */
 .bigcard-target.chunked .nowrap { white-space: nowrap; }
-.bigcard-heard { margin: 0 0 4px; font-size: 0.95rem; line-height: 1.4; color: #8a8a8a; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.bigcard-heard { margin: 0 0 4px; font-size: 0.95rem; line-height: 1.4; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 /* 逆さにしたときは、聞き取りの行をこちら側（下）に置く */
 .bigcard.flipped .bigcard-heard { order: 2; margin: 4px 0 0; }
 .bigcard.flipped .bigcard-details { order: 3; }
 .bigcard.flipped .bigcard-actions { order: 4; }
 .live-text { font-size: 1.3rem; font-weight: 600; line-height: 1.4; margin: 0; padding: 8px 4px; }
-.bigcard-live { margin: 0; font-size: 1.2rem; font-weight: 600; color: #333; text-align: center; max-height: 25vh; overflow: auto; }
+.bigcard-live { margin: 0; font-size: 1.2rem; font-weight: 600; color: var(--text); text-align: center; max-height: 25vh; overflow: auto; }
 /* 確かめる画面 */
 .bigcard-check { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 8px 4px; }
-.check-label { margin: 0; font-size: 0.95rem; color: #888; }
-.check-source { text-align: left; background: #f4f1ec; border: 1px dashed #c9bfb2; border-radius: 12px; padding: 12px; font-size: 1.7rem; font-weight: 700; line-height: 1.4; color: #111; cursor: pointer; }
-.check-source:disabled { color: #444; cursor: default; }
-.check-edit textarea { font-size: 1.4rem; background: #fff; color: #111; border: 2px solid #b5462f; }
-.check-target { font-size: 1.35rem; line-height: 1.45; color: #333; padding: 4px 2px; }
-.check-wait { color: #888; font-weight: 600; }
-.check-refining { display: block; font-size: 0.85rem; color: #999; }
+.check-label { margin: 0; font-size: 0.95rem; color: var(--muted); }
+.check-source { text-align: left; background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; padding: 12px; font-size: 1.7rem; font-weight: 700; line-height: 1.4; color: var(--text); cursor: pointer; }
+.check-source:disabled { color: var(--muted); cursor: default; }
+.check-edit textarea { font-size: 1.4rem; background: var(--bg); color: var(--text); border: 2px solid var(--accent); }
+.check-target { font-size: 1.35rem; line-height: 1.45; color: var(--text); padding: 4px 2px; }
+.check-wait { color: var(--muted); font-weight: 600; }
+.check-refining { display: block; font-size: 0.85rem; color: var(--muted); }
 .check-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; padding: 6px 0; }
 .check-actions .btn { min-height: 64px; font-size: 1.2rem; font-weight: 800; border-radius: 16px; }
-.check-retry { background: #fff; color: #b5462f; border: 2px solid #b5462f; }
-.check-retry.on { background: #d62d20; color: #fff; border-color: #d62d20; }
-.check-show { background: #b5462f; color: #fff; border-color: #b5462f; }
+.check-retry { background: transparent; color: var(--accent); border: 2px solid var(--accent); }
+.check-retry.on { background: var(--rec); color: #fff; border-color: var(--rec); }
+.check-show { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .check-show:disabled { opacity: 0.4; }
-.bigcard .btn.ghost { color: #555; border-color: #ccc; }
+.bigcard .btn.ghost { color: var(--muted); border-color: var(--line); }
 .check-show-pair { display: grid; grid-template-rows: 1fr 1fr; gap: 6px; }
 .check-show-pair .btn { min-height: 52px; font-size: 1.05rem; }
-.check-show-side { background: #fff; color: #b5462f; border: 2px solid #b5462f; font-weight: 800; border-radius: 16px; }
+.check-show-side { background: transparent; color: var(--accent); border: 2px solid var(--accent); font-weight: 800; border-radius: 16px; }
 .check-show-side:disabled { opacity: 0.4; }
 .live-status { margin: 0; }
 /* よく使う */
@@ -370,3 +370,16 @@ p { margin: 6px 0; }
 .wa-stats dd { margin: 0; }
 .wa-progress.failed { border-color: var(--danger); }
 .steps { padding-left: 1.2em; }
+.mic-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.mic-pair .mic-big { min-height: 132px; font-size: 1.05rem; padding: 8px; }
+.mic-pair .mic-big:disabled { opacity: 0.35; }
+.mic-flag { width: 42px; height: 28px; border-radius: 3px; flex: none; }
+.check-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.check-via { flex: 1; min-width: 40%; font-size: 0.85rem; color: var(--muted); }
+.bigcard-via { font-size: 0.85rem; }
+.bigcard-copy { min-height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--text); font-size: 0.9rem; cursor: pointer; white-space: nowrap; }
+.bigcard-copy:disabled { opacity: 0.4; }
+.bigcard-actions .bigcard-show { white-space: nowrap; padding: 0 12px; min-height: 44px; font-size: 1rem; }
+.bigcard-actions .bigcard-copy { padding: 0 7px; font-size: 0.85rem; }
+.bigcard-actions .bigcard-icon { min-width: 38px; }
+.bigcard-actions { gap: 2px; }

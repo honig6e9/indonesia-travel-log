@@ -88,7 +88,35 @@ function watchSilence(stream: MediaStream, onSilence: () => void): () => void {
   };
   return stop;
 }
-const MODE_LABEL: Record<Mode, string> = { auto: '自動', 'ja-id': '日→尼', 'id-ja': '尼→日' };
+/** 国旗（絵文字の国旗が出ない端末でも同じに見えるよう、図で描く） */
+function Flag({ lang }: { lang: 'ja' | 'id' }) {
+  return (
+    <svg className="mic-flag" viewBox="0 0 30 20" aria-hidden>
+      {lang === 'ja' ? (
+        <>
+          <rect width="30" height="20" fill="#fff" />
+          <circle cx="15" cy="10" r="6" fill="#bc002d" />
+        </>
+      ) : (
+        <>
+          <rect width="30" height="10" fill="#e70011" />
+          <rect y="10" width="30" height="10" fill="#fff" />
+        </>
+      )}
+      <rect width="30" height="20" fill="none" stroke="rgba(0,0,0,.25)" />
+    </svg>
+  );
+}
+
+/** 訳した AI の表示名 */
+export const PROVIDER_LABEL: Record<string, string> = {
+  claude: 'Claude',
+  codex: 'ChatGPT',
+  gemini: 'Gemini',
+  ollama: 'ローカル AI',
+  google: 'Google 翻訳',
+};
+const providerName = (p?: string | null) => (p ? (PROVIDER_LABEL[p] ?? p) : '');
 
 function ago(iso: string | null) {
   if (!iso) return '記録なし';
@@ -102,11 +130,9 @@ function ago(iso: string | null) {
 export function InterpretScreen() {
   const { db, ws, session, device, toast, recordingRef } = useApp();
   const canUsePc = !!supabase && !!session && ws.kind === 'cloud' && session.user.id === ws.ownerId;
-  const [mode, setModeState] = useState<Mode>(() => (localStorage.getItem('itl-interpret-mode') as Mode) || 'auto');
-  const setMode = (m: Mode) => {
-    localStorage.setItem('itl-interpret-mode', m);
-    setModeState(m);
-  };
+  // 文字で入力したときは、言語を家の PC で見分ける。話すときは国旗のボタンで言語を決める
+  const mode: Mode = 'auto';
+  const [recLang, setRecLang] = useState<'ja' | 'id' | null>(null);
   const [worker, setWorker] = useState<WorkerState | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
@@ -325,8 +351,9 @@ export function InterpretScreen() {
   const stopLiveOnlyRef = useRef<(() => void) | null>(null);
   const speakerRef = useRef<'me' | 'them'>('me');
 
-  const startRec = async (recMode: Mode = mode, speaker: 'me' | 'them' = 'me') => {
+  const startRec = async (recMode: Mode, speaker: 'me' | 'them' = 'me') => {
     speakerRef.current = speaker;
+    setRecLang(recMode === 'id-ja' ? 'id' : 'ja');
     setError(null);
     setLiveText('');
     if (liveOnly && speechRecognitionAvailable()) {
@@ -476,14 +503,6 @@ export function InterpretScreen() {
         </span>
       </header>
 
-      <div className="segmented">
-        {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
-          <button key={m} className={mode === m ? 'on' : ''} onClick={() => setMode(m)}>
-            {MODE_LABEL[m]}
-          </button>
-        ))}
-      </div>
-
       {favorites.length > 0 && (
         <section className="favorites" aria-label="よく使う">
           <p className="small muted">☆ よく使う（押すとすぐ見せられます）</p>
@@ -498,15 +517,29 @@ export function InterpretScreen() {
         </section>
       )}
 
-      <button
-        className={'mic-big' + (recording ? ' on' : '')}
-        onClick={() => (recording ? stopRec() : void startRec())}
-        disabled={!recordingSupported()}
-        aria-label={recording ? '録音を止めて訳す' : '話して訳す'}
-      >
-        <span className="mic-icon" aria-hidden>{recording ? '■' : '🎤'}</span>
-        <span>{recording ? `止めて訳す ${formatDuration(elapsed)}` : '押して話す'}</span>
-      </button>
+      <div className="mic-pair">
+        {(
+          [
+            ['ja', '日本語で話す', 'ja-id', 'me'],
+            ['id', 'Bahasa Indonesia', 'id-ja', 'them'],
+          ] as const
+        ).map(([lang, label, recMode, speaker]) => {
+          const active = recording && recLang === lang;
+          return (
+            <button
+              key={lang}
+              className={'mic-big' + (active ? ' on' : '')}
+              onClick={() => (active ? stopRec() : void startRec(recMode, speaker))}
+              disabled={!recordingSupported() || (recording && !active)}
+              aria-label={active ? '録音を止めて訳す' : label}
+            >
+              <Flag lang={lang} />
+              <span className="mic-icon" aria-hidden>{active ? '■' : '🎤'}</span>
+              <span>{active ? `止めて訳す ${formatDuration(elapsed)}` : label}</span>
+            </button>
+          );
+        })}
+      </div>
       {recording && liveText && <p className="live-text">{liveText}</p>}
       {liveStatus && (
         <p className="small muted live-status">
@@ -609,7 +642,7 @@ function statusLabel(it: Interpretation) {
     case 'processing':
       return '家の PC で処理中';
     case 'done':
-      return `完了${it.provider ? `（${it.provider}）` : ''}`;
+      return `完了${it.provider ? `（${providerName(it.provider)}で翻訳）` : ''}`;
     case 'error':
       return '失敗';
   }
@@ -896,6 +929,9 @@ function BigCard({
   const failed = reply.pending?.status === 'error' || (!!reply.error && !reply.recording);
   const heardLabel = item.audio || item.audioPath ? '聞き取り' : '入力';
   const refining = item.status === 'processing' && !!t;
+  const via = refining ? 'ローカル AI の速い訳（より正確な訳を確認中…）' : item.status === 'done' && item.provider ? `${providerName(item.provider)}で翻訳` : '';
+  const copy = (text: string | null | undefined, what: string) =>
+    void copyText(text ?? '').then((ok) => toast(ok ? `${what}をコピーしました` : 'コピーできませんでした'));
 
   // ---------- 確かめる ----------
   if (phase === 'check') {
@@ -938,15 +974,21 @@ function BigCard({
             {item.status === 'error' ? (
               <span className="bigcard-fail">{item.error ?? '訳せませんでした'}</span>
             ) : t ? (
-              <>
-                {t}
-                {refining && <span className="check-refining">（より正確な訳を確認中…）</span>}
-              </>
+              t
             ) : (
               <span className="check-wait">訳しています…</span>
             )}
           </div>
           {details && item.reading && <p className="bigcard-reading">{item.reading}</p>}
+          <div className="check-meta">
+            <span className="check-via">{via}</span>
+            <button className="bigcard-copy" disabled={!item.sourceText || reply.recording} onClick={() => copy(item.sourceText, '聞き取り')}>
+              📋 聞き取り
+            </button>
+            <button className="bigcard-copy" disabled={!t} onClick={() => copy(t, '訳')}>
+              📋 訳
+            </button>
+          </div>
         </div>
         <div className="check-actions">
           <button className={'btn check-retry' + (reply.recording ? ' on' : '')} onClick={() => (reply.recording ? reply.stop() : onRetry())}>
@@ -983,7 +1025,7 @@ function BigCard({
         // 聞き取った元の文。逆さにしても回さず、こちら側から確かめられるようにする
         <p className="bigcard-heard">
           {heardLabel}：{item.sourceText}
-          {refining && '（より正確な訳を確認中…）'}
+          {via && <span className="bigcard-via">　{via}</span>}
         </p>
       )}
       <div className={'bigcard-main' + (flip ? ' flip' : '')}>
@@ -1032,8 +1074,11 @@ function BigCard({
           </button>
         )}
         <span className="bigcard-spacer" />
-        <button className="bigcard-icon" aria-label="訳文をコピー" onClick={() => void copyText(t).then((ok) => toast(ok ? 'コピーしました' : 'コピーできませんでした'))} disabled={!t}>
-          📋
+        <button className="bigcard-copy" aria-label="聞き取った文をコピー" onClick={() => copy(item.sourceText, '聞き取り')} disabled={!item.sourceText}>
+          📋元
+        </button>
+        <button className="bigcard-copy" aria-label="訳文をコピー" onClick={() => copy(t, '訳')} disabled={!t}>
+          📋訳
         </button>
         <button className={'bigcard-icon' + (item.favorite ? ' fav-on' : '')} aria-label={item.favorite ? 'よく使うから外す' : 'よく使うに入れる'} onClick={onToggleFavorite}>
           {item.favorite ? '★' : '☆'}
