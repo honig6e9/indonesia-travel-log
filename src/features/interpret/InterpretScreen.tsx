@@ -126,8 +126,8 @@ export function InterpretScreen() {
   // この画面で送った 1 件の訳が届いたら、すぐ全画面で見せる
   const autoShowRef = useRef<string | null>(null);
   useEffect(() => {
-    // 速い訳（処理中）が届いた時点で出す。高精度の訳はあとから同じ画面で差し替わる
-    if (current && current.id === autoShowRef.current && (current.status === 'done' || current.status === 'processing') && current.targetText) {
+    // 聞き取りが出た時点ですぐ開く（確かめる画面）。訳は届きしだい同じ画面に出る
+    if (current && current.id === autoShowRef.current && (current.sourceText || current.targetText)) {
       autoShowRef.current = null;
       setBig(current);
     }
@@ -395,6 +395,20 @@ export function InterpretScreen() {
           key={liveBig.id}
           item={liveBig}
           onClose={() => setBig(null)}
+          // 言い直す：同じ向きでもう一度話す（自動のときは日本語として）
+          onRetry={() => void startRec(liveBig.mode === 'auto' ? 'ja-id' : liveBig.mode)}
+          // 直す：直した文で訳し直す
+          onEdit={(text) =>
+            void enqueue({
+              id: newId(),
+              createdAt: new Date().toISOString(),
+              mode: liveBig.mode === 'auto' ? (liveBig.sourceLang === 'id' ? 'id-ja' : 'ja-id') : liveBig.mode,
+              inputText: text,
+              sourceText: text,
+              status: 'local',
+              via: 'pc',
+            })
+          }
           reply={{
             recording,
             elapsed,
@@ -590,14 +604,36 @@ const REPLY_TEXT = {
   ja: { start: '答える', stop: '終わり', wait: '訳しています…', fail: '訳せませんでした。もう一度どうぞ' },
 };
 
-function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () => void; reply: ReplyControls }) {
+/**
+ * 全画面。流れは「話す → 聞き取りが合っているか確かめる → 相手に見せる」。
+ * - check：自分が話した直後。聞き取った文を大きく出し、合っていれば「見せる」、違えば言い直すか直す
+ * - show ：上下を逆にして、相手に訳文を大きく見せる（相手側に返事のボタン）
+ * - read ：相手の返事。訳（日本語）を自分が読む（「答える」ボタン）
+ */
+function BigCard({
+  item,
+  onClose,
+  reply,
+  onRetry,
+  onEdit,
+}: {
+  item: Interpretation;
+  onClose: () => void;
+  reply: ReplyControls;
+  onRetry: () => void;
+  onEdit: (text: string) => void;
+}) {
   const { toast } = useApp();
   const [flip, setFlip] = useState(false);
   const [details, setDetails] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLParagraphElement>(null);
   const t = item.targetText ?? '';
-  const lang = (item.targetLang as 'ja' | 'id') ?? 'id';
+  const lang: 'ja' | 'id' = (item.targetLang as 'ja' | 'id') ?? (item.mode === 'id-ja' ? 'ja' : 'id');
+  const userSpoke = item.mode === 'ja-id' || (item.mode === 'auto' && item.sourceLang === 'ja');
+  const phase: 'check' | 'show' | 'read' = flip ? 'show' : userSpoke ? 'check' : 'read';
 
   // 枠に収まる最大の文字の大きさを探す（画面の向きや大きさが変わったら探し直す）
   const fit = useCallback(() => {
@@ -632,14 +668,14 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
 
   useLayoutEffect(() => {
     fit();
-  }, [fit, t, details]);
+  }, [fit, t, details, phase]);
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', on);
     window.addEventListener('resize', fit);
     let wake: { release: () => void } | null = null;
-    void requestWakeLock().then((w) => (wake = w)); // 見せている間は画面を暗くしない
+    void requestWakeLock().then((w) => (wake = w)); // 表示している間は画面を暗くしない
     return () => {
       window.removeEventListener('keydown', on);
       window.removeEventListener('resize', fit);
@@ -649,26 +685,110 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
 
   const rt = REPLY_TEXT[lang];
   const failed = reply.pending?.status === 'error' || (!!reply.error && !reply.recording);
+  const heardLabel = item.audio || item.audioPath ? '聞き取り' : '入力';
+  const refining = item.status === 'processing' && !!t;
+
+  // ---------- 確かめる ----------
+  if (phase === 'check') {
+    return (
+      <div className="bigcard" role="dialog" aria-modal="true" aria-label="聞き取りの確認">
+        <div className="check">
+          <p className="check-label">{reply.recording ? '聞き取り中…' : `${heardLabel}（タップで直せます）`}</p>
+          {editing ? (
+            <div className="check-edit">
+              <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} autoFocus />
+              <div className="actions">
+                <button
+                  className="btn primary"
+                  disabled={!draft.trim()}
+                  onClick={() => {
+                    setEditing(false);
+                    onEdit(draft.trim());
+                  }}
+                >
+                  訳し直す
+                </button>
+                <button className="btn ghost" onClick={() => setEditing(false)}>
+                  やめる
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="check-source"
+              disabled={reply.recording}
+              onClick={() => {
+                setDraft(item.sourceText ?? '');
+                setEditing(true);
+              }}
+            >
+              {reply.recording ? reply.liveText || '…' : item.sourceText || '聞き取り中…'}
+            </button>
+          )}
+          <div className="check-target" lang={lang}>
+            {item.status === 'error' ? (
+              <span className="bigcard-fail">{item.error ?? '訳せませんでした'}</span>
+            ) : t ? (
+              <>
+                {t}
+                {refining && <span className="check-refining">（より正確な訳を確認中…）</span>}
+              </>
+            ) : (
+              <span className="check-wait">訳しています…</span>
+            )}
+          </div>
+          {details && item.reading && <p className="bigcard-reading">{item.reading}</p>}
+        </div>
+        <div className="check-actions">
+          <button className={'btn check-retry' + (reply.recording ? ' on' : '')} onClick={() => (reply.recording ? reply.stop() : onRetry())}>
+            {reply.recording ? `■ 終わり ${formatDuration(reply.elapsed)}` : '🎤 言い直す'}
+          </button>
+          <button className="btn primary check-show" disabled={!t || reply.recording} onClick={() => setFlip(true)}>
+            ↻ 見せる
+          </button>
+        </div>
+        <div className="bigcard-actions">
+          <span className="bigcard-spacer" />
+          {item.reading && (
+            <button className={'bigcard-icon' + (details ? ' on' : '')} aria-label="読み方" onClick={() => setDetails((d) => !d)}>
+              ア
+            </button>
+          )}
+          <button className="bigcard-icon" aria-label="閉じる" onClick={onClose} disabled={reply.recording}>
+            ✕
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- 見せる／読む ----------
   return (
     <div className={'bigcard' + (flip ? ' flipped' : '')} role="dialog" aria-modal="true" aria-label="訳文">
       {item.sourceText && (
-        // 聞き取った（入力した）元の文。逆さにしても回さず、こちら側から確かめられるようにする
+        // 聞き取った元の文。逆さにしても回さず、こちら側から確かめられるようにする
         <p className="bigcard-heard">
-          {item.audio || item.audioPath ? '聞き取り' : '入力'}：{item.sourceText}
-          {item.status === 'processing' && '（より正確な訳を確認中…）'}
+          {heardLabel}：{item.sourceText}
+          {refining && '（より正確な訳を確認中…）'}
         </p>
       )}
       <div className={'bigcard-main' + (flip ? ' flip' : '')}>
         <div ref={boxRef} className="bigcard-body">
-          <p ref={textRef} className="bigcard-target" lang={lang}>
-            {lang === 'ja'
-              ? japaneseChunks(t).map((c, i) => (
-                  <span key={i} className="nowrap">
-                    {c}
-                  </span>
-                ))
-              : t}
-          </p>
+          {t ? (
+            <p ref={textRef} className="bigcard-target" lang={lang}>
+              {lang === 'ja'
+                ? japaneseChunks(t).map((c, i) => (
+                    <span key={i} className="nowrap">
+                      {c}
+                    </span>
+                  ))
+                : t}
+            </p>
+          ) : item.status === 'error' ? (
+            <p className="bigcard-fail">{item.error ?? rt.fail}</p>
+          ) : (
+            <p className="bigcard-wait">{rt.wait}</p>
+          )}
         </div>
         <div className="bigcard-reply" lang={lang}>
           {reply.recording && reply.liveText && <p className="bigcard-live">{reply.liveText}</p>}
@@ -688,15 +808,17 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
       </div>
       {details && item.reading && (
         <div className="bigcard-details">
-          {item.reading && <p className="bigcard-reading">{item.reading}</p>}
+          <p className="bigcard-reading">{item.reading}</p>
         </div>
       )}
       <div className="bigcard-actions">
-        <button className={'bigcard-show' + (flip ? ' on' : '')} onClick={() => setFlip((f) => !f)} aria-pressed={flip}>
-          {flip ? '↺ 戻す' : '↻ 見せる'}
-        </button>
+        {flip && (
+          <button className="bigcard-show on" onClick={() => setFlip(false)}>
+            ↺ 戻す
+          </button>
+        )}
         <span className="bigcard-spacer" />
-        <button className="bigcard-icon" aria-label="読み上げ" onClick={() => !speak(t, lang) && toast('この端末では読み上げられません')}>
+        <button className="bigcard-icon" aria-label="読み上げ" onClick={() => !speak(t, lang) && toast('この端末では読み上げられません')} disabled={!t}>
           🔊
         </button>
         {item.reading && (
