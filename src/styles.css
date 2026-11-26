@@ -278,3 +278,8 @@ p { margin: 6px 0; }
 .add-row .btn { white-space: nowrap; }
 /* 日本語は文節で改行する（Chrome 119 以降） */
 .bigcard-target.chunked .nowrap { white-space: nowrap; }
+.bigcard-heard { margin: 0 0 4px; font-size: 0.95rem; line-height: 1.4; color: #8a8a8a; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* 逆さにしたときは、聞き取りの行をこちら側（下）に置く */
+.bigcard.flipped .bigcard-heard { order: 2; margin: 4px 0 0; }
+.bigcard.flipped .bigcard-details { order: 3; }
+.bigcard.flipped .bigcard-actions { order: 4; }

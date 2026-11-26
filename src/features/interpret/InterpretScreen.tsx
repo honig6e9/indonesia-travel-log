@@ -528,7 +528,13 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
   const rt = REPLY_TEXT[lang];
   const failed = reply.pending?.status === 'error' || (!!reply.error && !reply.recording);
   return (
-    <div className="bigcard" role="dialog" aria-modal="true" aria-label="訳文">
+    <div className={'bigcard' + (flip ? ' flipped' : '')} role="dialog" aria-modal="true" aria-label="訳文">
+      {item.sourceText && (
+        // 聞き取った（入力した）元の文。逆さにしても回さず、こちら側から確かめられるようにする
+        <p className="bigcard-heard">
+          {item.audio || item.audioPath ? '聞き取り' : '入力'}：{item.sourceText}
+        </p>
+      )}
       <div className={'bigcard-main' + (flip ? ' flip' : '')}>
         <div ref={boxRef} className="bigcard-body">
           <p ref={textRef} className="bigcard-target" lang={lang}>
@@ -556,10 +562,9 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
           {failed && <p className="bigcard-fail">{rt.fail}</p>}
         </div>
       </div>
-      {details && (
+      {details && item.reading && (
         <div className="bigcard-details">
           {item.reading && <p className="bigcard-reading">{item.reading}</p>}
-          {item.sourceText && <p className="bigcard-source">{item.sourceText}</p>}
         </div>
       )}
       <div className="bigcard-actions">
@@ -569,9 +574,11 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
         <button className="bigcard-icon" aria-label="向きを変える" onClick={() => setFlip((f) => !f)}>
           ↻
         </button>
-        <button className={'bigcard-icon' + (details ? ' on' : '')} aria-label="読み方と元の文" onClick={() => setDetails((d) => !d)}>
-          {item.reading ? 'ア' : '元'}
-        </button>
+        {item.reading && (
+          <button className={'bigcard-icon' + (details ? ' on' : '')} aria-label="読み方" onClick={() => setDetails((d) => !d)}>
+            ア
+          </button>
+        )}
         <button className="bigcard-icon" aria-label="閉じる" onClick={onClose} disabled={reply.recording}>
           ✕
         </button>
