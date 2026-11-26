@@ -6,7 +6,8 @@ import { Empty, Sheet } from '../../components/ui';
 import type { ChecklistItem, ChecklistType } from '../../db/types';
 import { percent } from '../../lib/format';
 import { CheckRow } from '../daily/TodayScreen';
-import { addItems, listItems, parseBulk, progress, SAMPLE_FOODS, SAMPLE_TASKS, setItemStatus } from './checklistRepo';
+import { addItems, listItems, parseBulk, parseImportFile, progress, SAMPLE_FOODS, SAMPLE_TASKS, setItemStatus, type ImportItem } from './checklistRepo';
+import { ImportSheet } from './ImportSheet';
 import { transact } from '../../db/repo';
 
 type StatusFilter = 'all' | 'open' | 'done' | 'skipped';
@@ -25,6 +26,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
   const [q, setQ] = useState('');
   const [newTitle, setNewTitle] = useState('');
   const [bulk, setBulk] = useState<string | null>(null);
+  const [importing, setImporting] = useState<{ items: ImportItem[]; errors: string[]; existing: ChecklistItem[] } | null>(null);
   const [reorder, setReorder] = useState(false);
   const plannedFromQuery = params.get('date');
 
@@ -99,6 +101,24 @@ export function ListsScreen(props: { type: ChecklistType }) {
       <div className="actions">
         <button className="btn small ghost" onClick={() => setBulk('')}>まとめて追加</button>
         <button className="btn small ghost" onClick={() => setBulk(type === 'task' ? SAMPLE_TASKS : SAMPLE_FOODS)}>候補サンプルから選ぶ</button>
+        <label className="btn small ghost file-btn">
+          ファイルから取り込む
+          <input
+            type="file"
+            accept=".json,application/json"
+            hidden
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (!f) return;
+              if (f.size > 5 * 1024 * 1024) return toast('ファイルが大きすぎます', { kind: 'error' });
+              const parsed = parseImportFile(await f.text());
+              if (parsed.items.length === 0) return toast(parsed.errors[0] ?? '取り込める項目がありません', { kind: 'error' });
+              const all = [...(await listItems(db, trip.id, 'task')), ...(await listItems(db, trip.id, 'food'))];
+              setImporting({ ...parsed, existing: all });
+            }}
+          />
+        </label>
         <button className="btn small ghost" onClick={() => setReorder((r) => !r)}>{reorder ? '並べ替えを終える' : '並べ替え'}</button>
       </div>
 
@@ -152,6 +172,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
       )}
       {!reorder && filtered.length === 0 && items.length > 0 && <Empty>条件に合う項目はありません。</Empty>}
 
+      {importing && <ImportSheet items={importing.items} errors={importing.errors} existing={importing.existing} onClose={() => setImporting(null)} />}
       {bulk !== null && <BulkSheet type={type} initial={bulk} existing={items} onClose={() => setBulk(null)} />}
       <p className="muted small">項目をタップすると、予定日・エリア・見送り・体験メモなどを編集できます。</p>
     </div>

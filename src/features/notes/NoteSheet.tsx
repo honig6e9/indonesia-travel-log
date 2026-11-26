@@ -3,6 +3,7 @@ import { useApp } from '../../app/context';
 import { Field, Sheet, VisibilitySelect, useDraft } from '../../components/ui';
 import { EVIDENCE_LABEL, type EvidenceType, type Note } from '../../db/types';
 import { parseTags } from '../../lib/format';
+import { formatPosition, getCurrentPosition, mapUrl } from '../../lib/geo';
 import { blankNote, deleteNote, NOTE_CATEGORIES, saveNote } from './notesRepo';
 
 export function NoteSheet(props: { note?: Note; date: string; onClose: () => void }) {
@@ -11,6 +12,7 @@ export function NoteSheet(props: { note?: Note; date: string; onClose: () => voi
   const [n, setN, clearDraft, restored] = useDraft<Note>(`note:${props.note?.id ?? 'new:' + props.date}`, initial);
   const [tags, setTags] = useState(n.tags.join(' '));
   const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
   const update = (patch: Partial<Note>) => setN({ ...n, ...patch });
 
   const save = async () => {
@@ -84,6 +86,31 @@ export function NoteSheet(props: { note?: Note; date: string; onClose: () => voi
       <Field label="場所（任意）">
         <input value={n.location ?? ''} onChange={(e) => update({ location: e.target.value || null })} />
       </Field>
+      <div className="actions">
+        <button
+          type="button"
+          className="btn small"
+          disabled={locating}
+          onClick={async () => {
+            setLocating(true);
+            try {
+              const pos = await getCurrentPosition();
+              update({ location: formatPosition(pos) });
+            } catch (e) {
+              toast((e as Error).message, { kind: 'error' });
+            } finally {
+              setLocating(false);
+            }
+          }}
+        >
+          {locating ? '取得中…' : '📍 現在地を入れる'}
+        </button>
+        {mapUrl(n.location) && (
+          <a className="link" href={mapUrl(n.location)!} target="_blank" rel="noopener noreferrer">
+            地図で開く
+          </a>
+        )}
+      </div>
       <Field label="記録対象日">
         <input type="date" value={n.localDate} onChange={(e) => e.target.value && update({ localDate: e.target.value })} />
       </Field>

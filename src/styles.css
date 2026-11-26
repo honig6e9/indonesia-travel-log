@@ -136,7 +136,7 @@ p { margin: 6px 0; }
 .kv li > span:last-child { text-align: right; }
 .ws-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); padding: 6px 0; flex-wrap: wrap; }
 
-.quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.quick { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .quick .btn, .quick .photo-btn .btn { width: 100%; }
 .photo-btn { position: relative; display: inline-block; }
 .popover { position: absolute; z-index: 5; top: 100%; left: 0; display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px; min-width: 180px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2); }
@@ -321,3 +321,4 @@ p { margin: 6px 0; }
 .interp-li .star { flex: none; min-width: 44px; color: var(--muted); }
 .interp-li .star.on { color: #e3a008; }
 .bigcard-icon.fav-on { color: #e3a008; }
+.file-btn { display: inline-flex; align-items: center; cursor: pointer; }

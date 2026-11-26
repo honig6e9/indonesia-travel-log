@@ -15,7 +15,8 @@ import { MediaSheet } from '../media/MediaSheet';
 import { mediaOn } from '../media/mediaRepo';
 import { PhotoButton } from '../media/PhotoButton';
 import { NoteSheet } from '../notes/NoteSheet';
-import { notesOn } from '../notes/notesRepo';
+import { blankNote, notesOn, saveNote } from '../notes/notesRepo';
+import { formatPosition, getCurrentPosition } from '../../lib/geo';
 import { SyncStatusLine } from '../sync/SyncStatus';
 import { RatingsCard } from './RatingsCard';
 
@@ -76,6 +77,28 @@ export function TodayScreen() {
       toast(`「${item.title}」を${item.type === 'food' ? '食べた' : '完了'}にしました（${date}）`, {
         action: { label: 'メモを追加', run: () => navigate(`item/${item.id}`) },
       });
+    }
+  };
+
+  // 📍 現在地：押すだけでメモとして記録する（あとから本文を書き足せる）
+  const [locating, setLocating] = useState(false);
+  const recordHere = async () => {
+    setLocating(true);
+    try {
+      const pos = await getCurrentPosition();
+      const note = await saveNote(ctx, {
+        ...blankNote(trip.id, date),
+        body: `📍 現在地（${timeIn(trip.timeZone, new Date().toISOString())}）`,
+        category: '観光・移動',
+        location: formatPosition(pos),
+      });
+      toast(`現在地を記録しました（±${Math.round(pos.accuracy)}m）`, {
+        action: { label: 'メモを書く', run: () => setSheet({ kind: 'note', note }) },
+      });
+    } catch (e) {
+      toast((e as Error).message, { kind: 'error' });
+    } finally {
+      setLocating(false);
     }
   };
 
@@ -145,13 +168,19 @@ export function TodayScreen() {
           <button className="btn" onClick={() => setSheet({ kind: 'note' })}>📝 メモ</button>
           <PhotoButton date={date} />
           <button className="btn" onClick={() => setSheet({ kind: 'expense' })}>💰 支出</button>
+          <button className="btn" disabled={locating} onClick={() => void recordHere()}>
+            {locating ? '取得中…' : '📍 現在地'}
+          </button>
         </div>
         {notes.length > 0 && (
           <ul className="list">
             {notes.map((n) => (
               <li key={n.id}>
                 <button className="row-btn" onClick={() => setSheet({ kind: 'note', note: n })}>
-                  <span className="muted small">{timeIn(trip.timeZone, n.createdAt)} {n.category}</span>
+                  <span className="muted small">
+                    {timeIn(trip.timeZone, n.createdAt)} {n.category}
+                    {n.location && ' 📍'}
+                  </span>
                   <span className="clamp">{n.body}</span>
                 </button>
               </li>

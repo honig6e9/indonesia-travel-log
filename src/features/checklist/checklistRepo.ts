@@ -1,6 +1,6 @@
 import type { TravelDB } from '../../db/db';
 import { alive, transact, type Ctx } from '../../db/repo';
-import type { ChecklistItem, ChecklistType, Currency, Expense, FoodExperience } from '../../db/types';
+import type { ChecklistItem, ChecklistType, Currency, Expense, FoodExperience, Priority } from '../../db/types';
 import { experienceExpenseId, firstExperienceId, newId } from '../../lib/ids';
 
 export const TASK_CATEGORIES = ['観光', '生活', '買い物', '交流', '調査', 'その他'];
@@ -244,4 +244,90 @@ export function progress(items: ChecklistItem[]) {
   const done = items.filter((i) => i.status === 'done').length;
   const skipped = items.filter((i) => i.status === 'skipped').length;
   return { done, skipped, total: items.length };
+}
+
+// ---------- ファイルから取り込む ----------
+
+export interface ImportItem {
+  type: ChecklistType;
+  title: string;
+  localName?: string | null;
+  category?: string;
+  area?: string;
+  plannedDate?: string | null;
+  priority?: Priority;
+  status?: ChecklistItem['status'];
+  note?: string;
+  targetPrice?: number | null;
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 取り込み用ファイル（JSON）を読む。形の合わない行は理由つきで外す */
+export function parseImportFile(text: string): { items: ImportItem[]; errors: string[] } {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return { items: [], errors: ['JSON として読めません'] };
+  }
+  const list = Array.isArray(data) ? data : (data as { items?: unknown })?.items;
+  if (!Array.isArray(list)) return { items: [], errors: ['items の一覧がありません'] };
+  if (list.length > 1000) return { items: [], errors: ['1 回に取り込めるのは 1000 件までです'] };
+  const items: ImportItem[] = [];
+  const errors: string[] = [];
+  list.forEach((raw, i) => {
+    const r = raw as Record<string, unknown>;
+    const title = typeof r.title === 'string' ? r.title.trim() : '';
+    const where = `${i + 1} 件目`;
+    if (r.type !== 'task' && r.type !== 'food') return errors.push(`${where}：type は task か food`);
+    if (!title || title.length > 200) return errors.push(`${where}：タイトルがないか長すぎます`);
+    if (r.plannedDate != null && !(typeof r.plannedDate === 'string' && DATE_RE.test(r.plannedDate))) return errors.push(`${where}：予定日の形が違います`);
+    if (r.priority != null && !['high', 'normal', 'low'].includes(r.priority as string)) return errors.push(`${where}：優先度の値が違います`);
+    if (r.status != null && !['open', 'done', 'skipped'].includes(r.status as string)) return errors.push(`${where}：状態の値が違います`);
+    const price = r.targetPrice == null ? null : Number(r.targetPrice);
+    if (price != null && (!Number.isInteger(price) || price < 0)) return errors.push(`${where}：目安予算は 0 以上の整数`);
+    const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+    items.push({
+      type: r.type,
+      title,
+      localName: str(r.localName, 200) || null,
+      category: str(r.category, 40) || undefined,
+      area: str(r.area, 300),
+      plannedDate: (r.plannedDate as string | null | undefined) ?? null,
+      priority: (r.priority as Priority | undefined) ?? 'normal',
+      status: (r.status as ChecklistItem['status'] | undefined) ?? 'open',
+      note: str(r.note, 4000),
+      targetPrice: price,
+    });
+  });
+  return { items, errors };
+}
+
+/** すでにある項目と同じ名前か（重複の候補） */
+export function isDuplicate(item: ImportItem, existing: ChecklistItem[]): boolean {
+  const key = norm(item.title);
+  return existing.some((e) => e.type === item.type && (norm(e.title) === key || (!!e.localName && norm(e.localName) === key)));
+}
+
+export async function importItems(ctx: Ctx, tripId: string, items: ImportItem[]) {
+  const current = [...(await listItems(ctx.db, tripId, 'task')), ...(await listItems(ctx.db, tripId, 'food'))];
+  let order = current.reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1;
+  await transact(ctx, async (w) => {
+    for (const it of items) {
+      const base = blankItem(tripId, it.type, it.title, order++);
+      await w.put('checklistItem', {
+        ...base,
+        title: it.title,
+        localName: it.localName ?? base.localName,
+        category: it.category ?? base.category,
+        area: it.area ?? '',
+        plannedDate: it.plannedDate ?? null,
+        priority: it.priority ?? 'normal',
+        status: it.status ?? 'open',
+        note: it.note ?? '',
+        targetPrice: it.targetPrice ?? null,
+      });
+    }
+  });
 }

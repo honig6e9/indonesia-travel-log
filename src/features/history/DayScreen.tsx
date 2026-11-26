@@ -49,7 +49,7 @@ export function DayScreen(props: { date: string }) {
     if (a.note.trim())
       evs.push({ at: a.updatedAt, key: a.id, node: <span><span className="muted small">補足（{diary.questions.find((q) => q.questionId === qid)?.title ?? qid}）</span><br />{a.note}</span> });
   for (const n of data.notes.filter((x) => x.localDate === date))
-    evs.push({ at: n.createdAt, key: n.id, node: <button className="row-btn" onClick={() => setSheet({ note: n })}><span className="muted small">{created(n.createdAt)}　📝 {n.category}</span><span>{n.body}</span></button> });
+    evs.push({ at: n.createdAt, key: n.id, node: <button className="row-btn" onClick={() => setSheet({ note: n })}><span className="muted small">{created(n.createdAt)}　📝 {n.category}{n.location ? `　📍 ${n.location}` : ''}</span><span>{n.body}</span></button> });
   for (const m of data.media.filter((x) => x.localDate === date))
     evs.push({ at: m.createdAt, key: m.id, node: <div className="tl-photo"><Thumb blobId={m.blobId} thumbId={m.thumbnailBlobId} alt={m.caption || '写真'} onClick={() => setSheet({ media: m })} /><span className="small">{m.caption}</span></div> });
   for (const i of data.items.filter((x) => x.status === 'done' && x.completedDate === date))
