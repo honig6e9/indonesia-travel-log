@@ -26,6 +26,7 @@ import { HistoryScreen } from '../features/history/HistoryScreen';
 import { DayScreen } from '../features/history/DayScreen';
 import { SettingsScreen } from '../features/settings/SettingsScreen';
 import { ConflictsScreen } from '../features/sync/ConflictsScreen';
+import { InterpretScreen } from '../features/interpret/InterpretScreen';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
@@ -269,6 +270,9 @@ function Workspaced(props: {
     case 'conflicts':
       screen = <ConflictsScreen />;
       break;
+    case 'interpret':
+      screen = <InterpretScreen />;
+      break;
     default:
       screen = <TodayScreen />;
   }
@@ -292,6 +296,7 @@ function Workspaced(props: {
             [
               ['today', '今日', '📅'],
               ['lists', 'リスト', '☑'],
+              ['interpret', '通訳', '🗣'],
               ['history', '履歴', '🗂'],
               ['settings', '設定', '⚙'],
             ] as const

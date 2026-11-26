@@ -307,3 +307,27 @@ export interface SettingRow {
   key: string;
   value: unknown;
 }
+
+/** 通訳の 1 件（端末固有。受付と結果は Supabase の interpret_jobs にもある） */
+export interface Interpretation {
+  id: string;
+  createdAt: string;
+  mode: 'auto' | 'ja-id' | 'id-ja';
+  audio?: Blob | null;
+  mimeType?: string | null;
+  ext?: string | null;
+  audioPath?: string | null;
+  durationMs?: number | null;
+  inputText?: string | null;
+  /** local=未送信, queued=受付済み, processing=PC で処理中, done=完了, error=失敗 */
+  status: 'local' | 'queued' | 'processing' | 'done' | 'error';
+  sourceLang?: string | null;
+  sourceText?: string | null;
+  targetLang?: string | null;
+  targetText?: string | null;
+  reading?: string | null;
+  provider?: string | null;
+  error?: string | null;
+  /** pc=家の PC, google=Google 翻訳で代わりに訳した */
+  via?: 'pc' | 'google' | null;
+}

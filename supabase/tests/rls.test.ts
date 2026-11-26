@@ -168,4 +168,32 @@ describe('Supabase migration: RLS と sync_push', () => {
     const bucket = (await pg.query<{ public: boolean }>(`select public from storage.buckets where id = 'travel-media'`)).rows[0];
     expect(bucket.public).toBe(false);
   });
+
+  it('通訳の受付：本人だけが自分のフォルダの音声で受付でき、他人と匿名は読めない', async () => {
+    const job = '66666666-6666-4666-8666-666666666666';
+    await asRole(pg, 'authenticated', A, (q) =>
+      q.query('select public.interpret_enqueue($1, $2, null, $3, $4)', [job, `${A}/interpret/${job}.webm`, 'auto', 'dev']),
+    );
+    // 再送は冪等
+    await asRole(pg, 'authenticated', A, (q) =>
+      q.query('select public.interpret_enqueue($1, $2, null, $3, $4)', [job, `${A}/interpret/${job}.webm`, 'auto', 'dev']),
+    );
+    const a = await asRole(pg, 'authenticated', A, async (q) => (await q.query<{ status: string; owner_id: string }>('select status, owner_id from public.interpret_jobs')).rows);
+    expect(a).toEqual([{ status: 'queued', owner_id: A }]);
+    const b = await asRole(pg, 'authenticated', B, async (q) => (await q.query('select * from public.interpret_jobs')).rows);
+    expect(b).toHaveLength(0);
+    await expect(asRole(pg, 'anon', null, (q) => q.query('select * from public.interpret_jobs'))).rejects.toThrow(/permission denied/);
+    // 他人のフォルダの音声・直接の書込み・結果の書換えはできない
+    await expect(
+      asRole(pg, 'authenticated', B, (q) =>
+        q.query('select public.interpret_enqueue($1, $2, null, $3, null)', ['77777777-7777-4777-8777-777777777777', `${A}/interpret/77777777-7777-4777-8777-777777777777.webm`, 'auto']),
+      ),
+    ).rejects.toThrow(/invalid audio path/);
+    await expect(
+      asRole(pg, 'authenticated', A, (q) => q.query(`update public.interpret_jobs set target_text = 'x'`)),
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      asRole(pg, 'anon', null, (q) => q.query('select public.interpret_enqueue($1, null, $2, $3, null)', [job, 'こんにちは', 'auto'])),
+    ).rejects.toThrow(/permission denied/);
+  });
 });

@@ -233,7 +233,7 @@ p { margin: 6px 0; }
   transform: translateX(-50%);
   width: min(640px, 100%);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   background: var(--surface);
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
@@ -247,3 +247,25 @@ p { margin: 6px 0; }
 .toast.error { background: var(--danger); color: #fff; }
 .toast .link { color: inherit; font-weight: 700; }
 .diary ~ .toasts, .app:has(.rec-bar) .toasts { bottom: calc(250px + env(safe-area-inset-bottom)); }
+
+/* 通訳 */
+.mic-big { width: 100%; min-height: 120px; border-radius: 20px; border: none; background: var(--accent); color: var(--accent-text); font-size: 1.2rem; font-weight: 700; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; cursor: pointer; }
+.mic-big .mic-icon { font-size: 2.4rem; }
+.mic-big.on { background: var(--rec); color: #fff; }
+.mic-big:disabled { opacity: 0.5; }
+.result-card .source { color: var(--muted); }
+.result-card .target { font-size: 1.6rem; font-weight: 700; line-height: 1.35; }
+.result-card .reading { color: var(--muted); }
+.result-card audio { width: 100%; }
+.waiting { font-weight: 600; }
+.interp-row { flex-direction: column !important; align-items: flex-start !important; }
+.bigcard { position: fixed; inset: 0; z-index: 80; background: #000; color: #fff; display: flex; flex-direction: column; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); }
+.bigcard-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 16px; overflow: auto; text-align: center; }
+.bigcard-body.flip { transform: rotate(180deg); }
+.bigcard-target { margin: 0; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
+.bigcard-reading { margin: 0; font-size: 6vw; color: #ffd9a8; }
+.bigcard-source { margin: 0; font-size: 4.2vw; color: #bbb; }
+.bigcard-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.bigcard-actions .btn { background: #222; color: #fff; border-color: #444; }
+.bigcard-actions .btn.primary { background: var(--accent); color: #fff; }
+.add-row .btn { white-space: nowrap; }

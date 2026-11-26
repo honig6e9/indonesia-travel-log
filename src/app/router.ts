@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 export interface Route {
-  name: 'today' | 'diary' | 'lists' | 'item' | 'history' | 'day' | 'settings' | 'conflicts';
+  name: 'today' | 'diary' | 'lists' | 'item' | 'history' | 'day' | 'settings' | 'conflicts' | 'interpret';
   param: string | null;
   query: URLSearchParams;
 }
@@ -11,7 +11,7 @@ export function parseHash(hash: string): Route {
   const [path, qs] = raw.split('?');
   const [name, param] = path.split('/');
   const query = new URLSearchParams(qs ?? '');
-  const known: Route['name'][] = ['today', 'diary', 'lists', 'item', 'history', 'day', 'settings', 'conflicts'];
+  const known: Route['name'][] = ['today', 'diary', 'lists', 'item', 'history', 'day', 'settings', 'conflicts', 'interpret'];
   return { name: known.includes(name as Route['name']) ? (name as Route['name']) : 'today', param: param ? decodeURIComponent(param) : null, query };
 }
 

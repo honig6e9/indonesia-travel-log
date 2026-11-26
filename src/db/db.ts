@@ -8,6 +8,7 @@ import type {
   DailyLog,
   Expense,
   FoodExperience,
+  Interpretation,
   Link,
   LocalOriginal,
   Media,
@@ -21,7 +22,7 @@ import type {
 } from './types';
 
 export const DB_BASE_NAME = 'indonesia-travel-log';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * 1 つの「領域（ワークスペース）」の DB。
@@ -48,6 +49,7 @@ export class TravelDB extends Dexie {
   syncMeta!: Table<SettingRow, string>;
   conflicts!: Table<ConflictRow, string>;
   drafts!: Table<RecordingDraft, string>;
+  interpretations!: Table<Interpretation, string>;
 
   constructor(name: string) {
     super(name);
@@ -71,6 +73,10 @@ export class TravelDB extends Dexie {
       syncMeta: 'key',
       conflicts: 'id, [entityType+entityId], status',
       drafts: 'id, dailyLogId',
+    });
+    // v2：通訳の履歴（端末固有。既存データには触れない）
+    this.version(2).stores({
+      interpretations: 'id, createdAt, status',
     });
   }
 }

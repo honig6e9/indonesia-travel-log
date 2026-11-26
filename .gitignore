@@ -10,3 +10,4 @@ dev-dist
 .claude/
 *.tsbuildinfo
 .yomiyasu/
+worker/.env
