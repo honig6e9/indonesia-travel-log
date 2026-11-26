@@ -187,7 +187,8 @@ def whisper_model():
 def transcribe(audio_file: Path, mode: str, hint_text: str | None = None) -> tuple[str, str]:
     """録音から言語を判定して文字にする。
 
-    使う言語は日本語とインドネシア語だけ。押したボタン（mode）には関係なく、話した言語で決める。
+    使う言語は日本語とインドネシア語だけ。国旗のボタン（mode）で選んだ言語を使う。
+    mode が auto（以前の版・文字入力）のときだけ、話した言語で決める。
     日本語ははっきり判定できる（0.99 前後）が、日本人の発音のインドネシア語の短い言葉は
     アイスランド語などと判定されることがあるので、「日本語らしさ」だけで決める。
     スマホで聞き取った文（hint_text）があり、言語が合っていれば、それをそのまま使う（速い）。
@@ -201,6 +202,29 @@ def transcribe(audio_file: Path, mode: str, hint_text: str | None = None) -> tup
     _, probs = model.detect_language(mel)
     pj = probs.get("ja", 0)
     top = max(probs, key=probs.get)
+    if hint_lang:
+        # 国旗のボタンで言語を選んでいるので、それを信じる（日本人の発音のインドネシア語は
+        # Whisper が日本語と判定しやすい。例：「Nama saya Akira」を ja 0.84 と判定した）。
+        # ボタンと反対の言語だと強く判定されたときだけ、両方で文字にして確からしい方を選ぶ
+        def run(cand: str) -> tuple[float, str]:
+            r = model.transcribe(str(audio_file), language=cand, fp16=True, condition_on_previous_text=False)
+            segs = r.get("segments") or []
+            return sum(sg["avg_logprob"] for sg in segs) / max(1, len(segs)), (r.get("text") or "").strip()
+
+        other = "id" if hint_lang == "ja" else "ja"
+        strongly_other = pj >= 0.97 if hint_lang == "id" else pj <= 0.03
+        if hint_text and not strongly_other:
+            log(f"言語はボタンのとおり {hint_lang}（ja={pj:.2f}）。スマホの聞き取りを使います")
+            return hint_lang, hint_text.strip()
+        lp, text = run(hint_lang)
+        if strongly_other:
+            lp2, text2 = run(other)
+            log(f"ボタンは {hint_lang} だが ja={pj:.2f}。比べる {hint_lang}={lp:.2f} {other}={lp2:.2f}")
+            if lp2 > lp + 0.3:
+                return other, text2
+        else:
+            log(f"言語はボタンのとおり {hint_lang}（ja={pj:.2f}）")
+        return hint_lang, text
     if pj >= 0.6:
         lang = "ja"
     elif pj <= 0.15:
