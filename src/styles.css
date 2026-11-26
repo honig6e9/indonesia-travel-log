@@ -283,3 +283,5 @@ p { margin: 6px 0; }
 .bigcard.flipped .bigcard-heard { order: 2; margin: 4px 0 0; }
 .bigcard.flipped .bigcard-details { order: 3; }
 .bigcard.flipped .bigcard-actions { order: 4; }
+.live-text { font-size: 1.3rem; font-weight: 600; line-height: 1.4; margin: 0; padding: 8px 4px; }
+.bigcard-live { margin: 0; font-size: 1.2rem; font-weight: 600; color: #333; text-align: center; max-height: 25vh; overflow: auto; }

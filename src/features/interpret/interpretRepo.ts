@@ -56,6 +56,20 @@ export async function workerState(sb: SupabaseClient): Promise<WorkerState> {
 
 /** 未送信の 1 件を送る（音声のアップロード → 受付）。同じ ID の再送は安全 */
 export async function submit(db: TravelDB, sb: SupabaseClient, ownerId: string, deviceId: string, item: Interpretation) {
+  // スマホで文字にしたものは、文字だけを先に受付に出す（音声はあとから送る）
+  if (item.inputText) {
+    const { error } = await sb.rpc('interpret_enqueue', {
+      p_id: item.id,
+      p_audio_path: null,
+      p_input_text: item.inputText,
+      p_mode: item.mode,
+      p_device_id: deviceId,
+    });
+    if (error) throw error;
+    await db.interpretations.update(item.id, { status: 'queued', via: 'pc' });
+    if (item.audio) void uploadAudio(db, sb, ownerId, item).catch(() => undefined);
+    return;
+  }
   let audioPath = item.audioPath ?? null;
   if (item.audio && !audioPath) {
     const path = `${ownerId}/interpret/${item.id}.${item.ext || 'webm'}`;
@@ -73,6 +87,15 @@ export async function submit(db: TravelDB, sb: SupabaseClient, ownerId: string, 
   });
   if (error) throw error;
   await db.interpretations.update(item.id, { status: 'queued', via: 'pc' });
+}
+
+/** 録音を保存用に送る（訳には使わない。家の PC があとで取り寄せる） */
+export async function uploadAudio(db: TravelDB, sb: SupabaseClient, ownerId: string, item: Interpretation) {
+  if (!item.audio || item.audioPath) return;
+  const path = `${ownerId}/interpret/${item.id}.${item.ext || 'webm'}`;
+  const { error } = await sb.storage.from(BUCKET).upload(path, item.audio, { contentType: item.mimeType || 'audio/webm', upsert: false });
+  if (error && !/already exists|Duplicate/i.test(error.message) && String((error as { statusCode?: string }).statusCode) !== '409') throw error;
+  await db.interpretations.update(item.id, { audioPath: path });
 }
 
 /** 送信待ちと処理中のものの状態を Supabase から取り込む */
@@ -162,6 +185,76 @@ export function recognizeOnce(lang: 'ja' | 'id'): { promise: Promise<string>; st
   });
   rec.start();
   return { promise, stop: () => rec.stop() };
+}
+
+export interface LiveRecognition {
+  /** 止めて、聞き取れた文を返す（何も聞き取れなければ空文字） */
+  stop: () => Promise<string>;
+  /** 音声認識が使えなかった（マイクの取り合いなど） */
+  failed: () => boolean;
+}
+
+/**
+ * 話している間から文字にする（Chrome の音声認識。音声は Google に送られる。通信が必要）。
+ * onText には途中経過を含めた全文を渡す。話し終えて認識が自然に終わったら onEnd を呼ぶ。
+ */
+export function startLiveRecognition(lang: 'ja' | 'id', onText: (text: string) => void, onEnd: () => void): LiveRecognition | null {
+  const w = window as unknown as { SpeechRecognition?: new () => Recognition & { continuous: boolean }; webkitSpeechRecognition?: new () => Recognition & { continuous: boolean } };
+  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+  if (!Ctor) return null;
+  const rec = new Ctor();
+  rec.lang = lang === 'ja' ? 'ja-JP' : 'id-ID';
+  rec.continuous = true;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+  let finalText = '';
+  let interim = '';
+  let failed = false;
+  let stopping = false;
+  let ended = false;
+  let resolveStop: ((t: string) => void) | null = null;
+  const current = () => (finalText + interim).trim();
+  rec.onresult = (e) => {
+    const results = e.results as unknown as ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }>;
+    let fin = '';
+    let mid = '';
+    for (const r of Array.from(results)) {
+      if (r.isFinal) fin += r[0]?.transcript ?? '';
+      else mid += r[0]?.transcript ?? '';
+    }
+    finalText = fin;
+    interim = mid;
+    onText(current());
+  };
+  rec.onerror = (e) => {
+    if (e.error !== 'no-speech' && e.error !== 'aborted') failed = true;
+  };
+  rec.onend = () => {
+    ended = true;
+    if (resolveStop) resolveStop(current());
+    else if (!stopping) onEnd();
+  };
+  try {
+    rec.start();
+  } catch {
+    return null;
+  }
+  return {
+    failed: () => failed,
+    stop: () =>
+      new Promise<string>((resolve) => {
+        stopping = true;
+        if (ended) return resolve(current());
+        resolveStop = resolve;
+        try {
+          rec.stop();
+        } catch {
+          resolve(current());
+        }
+        // 終わりの合図が来ない端末もあるので、少し待って打ち切る
+        setTimeout(() => resolve(current()), 1500);
+      }),
+  };
 }
 
 export function googleTranslateUrl(text: string, from: 'ja' | 'id' | 'auto', to: 'ja' | 'id') {

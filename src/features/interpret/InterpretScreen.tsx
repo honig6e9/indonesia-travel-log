@@ -18,7 +18,10 @@ import {
   refresh,
   speak,
   speechRecognitionAvailable,
+  startLiveRecognition,
   submit,
+  uploadAudio,
+  type LiveRecognition,
   workerState,
   type Mode,
   type WorkerState,
@@ -53,6 +56,10 @@ export function InterpretScreen() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const mediaRef = useRef<MediaRecorder | null>(null);
+  // スマホの音声認識（話しながら文字にする）
+  const liveRef = useRef<LiveRecognition | null>(null);
+  const liveStopRef = useRef<Promise<string> | null>(null);
+  const [liveText, setLiveText] = useState('');
   const streamRef = useRef<MediaStream | null>(null);
   const startRef = useRef(0);
 
@@ -78,6 +85,9 @@ export function InterpretScreen() {
   // PC の応答状況・履歴の取り込み・未送信の再送
   const sendPending = useCallback(async () => {
     if (!canUsePc || !supabase) return;
+    for (const it of await db.interpretations.filter((i) => !!i.audio && !i.audioPath && !!i.inputText && i.status !== 'local').toArray()) {
+      await uploadAudio(db, supabase, ws.ownerId!, it).catch(() => undefined);
+    }
     const locals = await db.interpretations.where('status').equals('local').toArray();
     for (const it of locals) {
       if (it.via === 'google') continue;
@@ -150,6 +160,7 @@ export function InterpretScreen() {
 
   const startRec = async (recMode: Mode = mode) => {
     setError(null);
+    setLiveText('');
     const fmt = pickAudioFormat();
     if (!fmt) return setError('この端末では録音できません。下の欄に文字で入力してください');
     let stream: MediaStream;
@@ -158,6 +169,10 @@ export function InterpretScreen() {
     } catch (e) {
       return setError(micErrorMessage(e));
     }
+    // 話しながら文字にする言語：「尼→日」と Jawab はインドネシア語、それ以外は日本語
+    const liveLang: 'ja' | 'id' = recMode === 'id-ja' ? 'id' : 'ja';
+    liveStopRef.current = null;
+    liveRef.current = startLiveRecognition(liveLang, setLiveText, () => stopRef.current());
     streamRef.current = stream;
     const mr = new MediaRecorder(stream, fmt.mimeType ? { mimeType: fmt.mimeType, audioBitsPerSecond: 64000 } : undefined);
     const chunks: Blob[] = [];
@@ -169,6 +184,28 @@ export function InterpretScreen() {
       setRecording(false);
       const blob = new Blob(chunks, { type: mimeType });
       const durationMs = Date.now() - startRef.current;
+      // スマホで聞き取れていれば、文字だけを先に送る（家の PC の Whisper を待たない）
+      const live = liveRef.current;
+      liveRef.current = null;
+      const heard = live && !live.failed() ? (await (liveStopRef.current ?? live.stop())).trim() : '';
+      liveStopRef.current = null;
+      setLiveText('');
+      if (heard) {
+        await enqueue({
+          id: newId(),
+          createdAt: new Date().toISOString(),
+          mode: liveLang === 'ja' ? 'ja-id' : 'id-ja',
+          inputText: heard,
+          sourceText: heard,
+          audio: blob.size > 0 ? blob : null,
+          mimeType,
+          ext: extForMime(mimeType, fmt.ext),
+          durationMs,
+          status: 'local',
+          via: 'pc',
+        });
+        return;
+      }
       if (blob.size === 0 || durationMs < 500) return setError('短すぎて録音できませんでした。もう一度どうぞ');
       await enqueue({
         id: newId(),
@@ -198,9 +235,13 @@ export function InterpretScreen() {
   };
 
   const stopRec = () => {
+    // 音声認識と録音を同時に止める（認識の最後の文字を取りこぼさない）
+    if (liveRef.current && !liveStopRef.current) liveStopRef.current = liveRef.current.stop();
     const mr = mediaRef.current;
     if (mr && mr.state !== 'inactive') mr.stop();
   };
+  const stopRef = useRef(stopRec);
+  stopRef.current = stopRec;
 
   const sendText = async () => {
     const t = text.trim();
@@ -241,6 +282,7 @@ export function InterpretScreen() {
         <span className="mic-icon" aria-hidden>{recording ? '■' : '🎤'}</span>
         <span>{recording ? `止めて訳す ${formatDuration(elapsed)}` : '押して話す'}</span>
       </button>
+      {recording && liveText && <p className="live-text">{liveText}</p>}
       {error && <p className="error-box">{error}</p>}
 
       <div className="add-row">
@@ -285,6 +327,7 @@ export function InterpretScreen() {
             recording,
             elapsed,
             error,
+            liveText,
             pending: current && current.id !== liveBig.id && current.status !== 'done' && !current.targetText ? current : null,
             // 返事は、表示中の訳の言語で話してもらい、反対向きに訳す
             start: () => void startRec(liveBig.targetLang === 'ja' ? 'ja-id' : 'id-ja'),
@@ -438,6 +481,7 @@ function Fallback({ item, mode, reason }: { item: Interpretation | null; mode: M
  * 読み方・元の文・操作は目立たない小さなボタンにまとめ、必要なときだけ開く。
  */
 interface ReplyControls {
+  liveText: string;
   recording: boolean;
   elapsed: number;
   error: string | null;
@@ -555,6 +599,7 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
           </p>
         </div>
         <div className="bigcard-reply" lang={lang}>
+          {reply.recording && reply.liveText && <p className="bigcard-live">{reply.liveText}</p>}
           {reply.pending && reply.pending.status !== 'error' ? (
             <p className="bigcard-wait">{rt.wait}</p>
           ) : (

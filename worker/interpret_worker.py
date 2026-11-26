@@ -90,6 +90,45 @@ def heartbeat(status: str = "ok", extra: dict | None = None) -> None:
     rest("POST", "interpret_worker", json=body, headers={"Prefer": "resolution=merge-duplicates,return=minimal"})
 
 
+_owners: set[str] = set()
+
+
+def sync_audio_once() -> int:
+    """スマホが文字で訳したあとに送った録音を、この PC にも保存する（訳には使わない）"""
+    got = 0
+    for owner in list(_owners):
+        r = requests.post(
+            f"{SUPABASE_URL}/storage/v1/object/list/{BUCKET}",
+            headers=HEADERS,
+            json={"prefix": f"{owner}/interpret/", "limit": 1000, "sortBy": {"column": "created_at", "order": "desc"}},
+            timeout=30,
+        )
+        r.raise_for_status()
+        for obj in r.json():
+            name = obj.get("name") or ""
+            if "." not in name:
+                continue
+            day = (obj.get("created_at") or dt.datetime.now(dt.timezone.utc).isoformat())[:10]
+            dest = AUDIO_DIR / day / name
+            if dest.exists():
+                continue
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(download_audio(f"{owner}/interpret/{name}"))
+            got += 1
+    return got
+
+
+def audio_sync_loop(stop: threading.Event) -> None:
+    while not stop.is_set():
+        stop.wait(120)
+        try:
+            n = sync_audio_once()
+            if n:
+                log(f"スマホの録音を {n} 件保存しました")
+        except Exception as e:
+            log("録音の取り寄せに失敗:", str(e)[:200])
+
+
 def heartbeat_loop(stop: threading.Event) -> None:
     while not stop.is_set():
         try:
@@ -339,6 +378,8 @@ def translate(src_lang: str, text: str, providers: list[str] | None = None) -> t
 
 def process(job: dict) -> None:
     jid = job["id"]
+    if job.get("owner_id"):
+        _owners.add(job["owner_id"])
     mode = job.get("mode") or "auto"
     day = (job.get("created_at") or dt.datetime.now(dt.timezone.utc).isoformat())[:10]
     out_dir = AUDIO_DIR / day
@@ -419,6 +460,13 @@ def main() -> int:
     whisper_model()
     stop = threading.Event()
     threading.Thread(target=heartbeat_loop, args=(stop,), daemon=True).start()
+    threading.Thread(target=audio_sync_loop, args=(stop,), daemon=True).start()
+    # 起動時に、最近の受付から持ち主を知っておく（録音の取り寄せ用）
+    try:
+        for row in rest("GET", "interpret_jobs?select=owner_id&order=created_at.desc&limit=20").json():
+            _owners.add(row["owner_id"])
+    except Exception:
+        pass
     while True:
         try:
             for job in fetch_jobs():
