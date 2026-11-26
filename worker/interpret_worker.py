@@ -58,7 +58,7 @@ PROVIDERS = [p.strip() for p in os.environ.get("PROVIDERS", "claude,codex,gemini
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "haiku")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:26b")
-POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "1.5"))
+POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "0.8"))
 BUCKET = "travel-media"
 
 HEADERS = {"apikey": SERVICE_KEY, "Authorization": f"Bearer {SERVICE_KEY}"}
@@ -113,6 +113,10 @@ def claim(job: dict) -> dict | None:
 
 def finish(job_id: str, fields: dict) -> None:
     fields = {**fields, "processed_at": dt.datetime.now(dt.timezone.utc).isoformat()}
+    rest("PATCH", f"interpret_jobs?id=eq.{job_id}", json=fields, headers={"Prefer": "return=minimal"})
+
+
+def update(job_id: str, fields: dict) -> None:
     rest("PATCH", f"interpret_jobs?id=eq.{job_id}", json=fields, headers={"Prefer": "return=minimal"})
 
 
@@ -284,22 +288,32 @@ def via_ollama(prompt: str) -> dict:
 TRANSLATORS = {"claude": via_claude, "codex": via_codex, "gemini": via_gemini, "ollama": via_ollama}
 
 
-def translate(src_lang: str, text: str) -> tuple[dict, str, list[str]]:
+# 失敗した翻訳先は 10 分間飛ばす（ログイン切れなどで毎回待たされないように）
+_skip_until: dict[str, float] = {}
+SKIP_SECONDS = 600
+
+
+def translate(src_lang: str, text: str, providers: list[str] | None = None) -> tuple[dict, str, list[str]]:
     prompt = build_prompt(src_lang, text)
     errors: list[str] = []
-    for name in PROVIDERS:
+    for name in providers if providers is not None else PROVIDERS:
         fn = TRANSLATORS.get(name)
         if not fn:
+            continue
+        if _skip_until.get(name, 0) > time.time():
+            errors.append(f"{name}: しばらく飛ばしています（直前に失敗）")
             continue
         t0 = time.time()
         try:
             res = fn(prompt)
+            _skip_until.pop(name, None)
             log(f"翻訳 {name} {time.time() - t0:.1f}s")
             return res, name, errors
         except Exception as e:
             msg = f"{name}: {e}"
             log("翻訳失敗", msg[:300])
             errors.append(msg[:300])
+            _skip_until[name] = time.time() + SKIP_SECONDS
     raise RuntimeError("すべての翻訳に失敗しました / " + " | ".join(errors))
 
 
@@ -326,18 +340,42 @@ def process(job: dict) -> None:
     if not text:
         finish(jid, {"status": "error", "error": "音声を聞き取れませんでした。もう一度、はっきり話してください"})
         return
-    res, provider, errors = translate(src_lang, text)
     target_lang = "id" if src_lang == "ja" else "ja"
-    fields = {
-        "status": "done",
-        "source_lang": src_lang,
-        "source_text": text,
-        "target_lang": target_lang,
-        "target_text": res["translation"],
-        "reading": res["reading"] if src_lang == "ja" else "",
-        "provider": provider,
-        "error": None,
-    }
+    # 1. 聞き取った文をすぐスマホに見せる
+    update(jid, {"source_lang": src_lang, "source_text": text, "target_lang": target_lang})
+
+    def fields_for(res: dict, provider: str, status: str) -> dict:
+        return {
+            "status": status,
+            "source_lang": src_lang,
+            "source_text": text,
+            "target_lang": target_lang,
+            "target_text": res["translation"],
+            "reading": res["reading"] if src_lang == "ja" else "",
+            "provider": provider,
+            "error": None,
+        }
+
+    # 2. ローカル LLM（約 1 秒）で先に訳して見せる（処理中のまま）
+    upper = [p for p in PROVIDERS if p != "ollama"]
+    quick = None
+    if "ollama" in PROVIDERS and upper:
+        try:
+            t1 = time.time()
+            quick = via_ollama(build_prompt(src_lang, text))
+            update(jid, fields_for(quick, "ollama", "processing"))
+            log(f"速い訳 ollama {time.time() - t1:.1f}s: {quick['translation']}")
+        except Exception as e:
+            log("速い訳に失敗:", str(e)[:200])
+    # 3. 優先順位の高い翻訳（Claude → ChatGPT → Gemini）で差し替える。全部だめなら速い訳で確定
+    errors: list[str] = []
+    try:
+        res, provider, errors = translate(src_lang, text, upper if quick else None)
+    except Exception as e:
+        if not quick:
+            raise
+        res, provider, errors = quick, "ollama", [str(e)[:300]]
+    fields = fields_for(res, provider, "done")
     finish(jid, fields)
     with (AUDIO_DIR / "log.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps({"id": jid, "created_at": job.get("created_at"), "mode": mode, **fields, "skipped": errors}, ensure_ascii=False) + "\n")

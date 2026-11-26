@@ -62,7 +62,8 @@ export function InterpretScreen() {
   // この画面で送った 1 件の訳が届いたら、すぐ全画面で見せる
   const autoShowRef = useRef<string | null>(null);
   useEffect(() => {
-    if (current && current.id === autoShowRef.current && current.status === 'done' && current.targetText) {
+    // 速い訳（処理中）が届いた時点で出す。高精度の訳はあとから同じ画面で差し替わる
+    if (current && current.id === autoShowRef.current && (current.status === 'done' || current.status === 'processing') && current.targetText) {
       autoShowRef.current = null;
       setBig(current);
     }
@@ -120,7 +121,7 @@ export function InterpretScreen() {
     const t = window.setInterval(() => {
       void refresh(db, sb).catch(() => undefined);
       setNow(Date.now());
-    }, 1500);
+    }, 800);
     return () => window.clearInterval(t);
   }, [waiting, canUsePc, db]);
 
@@ -208,6 +209,9 @@ export function InterpretScreen() {
     await enqueue({ id: newId(), createdAt: new Date().toISOString(), mode, inputText: t, sourceText: t, status: 'local', via: 'pc' });
   };
 
+  // 全画面は、履歴の最新の内容（速い訳 → 高精度の訳の差し替え）を映す
+  const liveBig = big ? (items.find((i) => i.id === big.id) ?? big) : null;
+
   const pcDown = !canUsePc || (worker !== null && !worker.online);
   const stuck = !!current && (current.status === 'queued' || current.status === 'local') && now - Date.parse(current.createdAt) > WAIT_FALLBACK_MS;
 
@@ -272,18 +276,18 @@ export function InterpretScreen() {
         </p>
       )}
       <p className="small muted">相手の声を録るときは、相手の了解をとってください。音声と訳はご自身の Supabase と家の PC に保存されます。</p>
-      {big && (
+      {liveBig && (
         <BigCard
-          key={big.id}
-          item={big}
+          key={liveBig.id}
+          item={liveBig}
           onClose={() => setBig(null)}
           reply={{
             recording,
             elapsed,
             error,
-            pending: current && current.id !== big.id && current.status !== 'done' ? current : null,
+            pending: current && current.id !== liveBig.id && current.status !== 'done' && !current.targetText ? current : null,
             // 返事は、表示中の訳の言語で話してもらい、反対向きに訳す
-            start: () => void startRec(big.targetLang === 'ja' ? 'ja-id' : 'id-ja'),
+            start: () => void startRec(liveBig.targetLang === 'ja' ? 'ja-id' : 'id-ja'),
             stop: stopRec,
           }}
         />
@@ -484,9 +488,11 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
     const box = boxRef.current;
     const el = textRef.current;
     if (!box || !el) return;
+    // 大きすぎると読みにくいので、上限は画面の短い辺の 12%（スマホで 45px 前後）
+    const cap = Math.max(28, Math.round(Math.min(window.innerWidth, window.innerHeight) * 0.12));
     const largest = () => {
       let lo = 16;
-      let hi = 480;
+      let hi = cap + 1;
       while (hi - lo > 1) {
         const mid = Math.floor((lo + hi) / 2);
         el.style.fontSize = `${mid}px`;
@@ -533,6 +539,7 @@ function BigCard({ item, onClose, reply }: { item: Interpretation; onClose: () =
         // 聞き取った（入力した）元の文。逆さにしても回さず、こちら側から確かめられるようにする
         <p className="bigcard-heard">
           {item.audio || item.audioPath ? '聞き取り' : '入力'}：{item.sourceText}
+          {item.status === 'processing' && '（より正確な訳を確認中…）'}
         </p>
       )}
       <div className={'bigcard-main' + (flip ? ' flip' : '')}>
