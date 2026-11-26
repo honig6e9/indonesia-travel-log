@@ -11,3 +11,4 @@ dev-dist
 *.tsbuildinfo
 .yomiyasu/
 worker/.env
+__pycache__/

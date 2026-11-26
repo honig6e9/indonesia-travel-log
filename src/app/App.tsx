@@ -30,6 +30,7 @@ import { InterpretScreen } from '../features/interpret/InterpretScreen';
 import { InboxScreen } from '../features/inbox/InboxScreen';
 import { InboxDetailScreen } from '../features/inbox/InboxDetailScreen';
 import { QuickAddScreen } from '../features/inbox/QuickAddScreen';
+import { WhatsAppScreen } from '../features/inbox/WhatsAppScreen';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
@@ -286,13 +287,16 @@ function Workspaced(props: {
           <InboxScreen />
         );
       break;
+    case 'whatsapp':
+      screen = <WhatsAppScreen />;
+      break;
     case 'share':
       screen = <QuickAddScreen key={route.query.get('id') ?? 'err'} shareId={route.query.get('id')} shareError={route.query.get('error') === '1'} />;
       break;
     default:
       screen = <TodayScreen />;
   }
-  const tab = route.name === 'diary' || route.name === 'today' || route.name === 'inbox' || route.name === 'share' ? 'today' : route.name === 'item' ? 'lists' : route.name === 'day' ? 'history' : route.name === 'conflicts' ? 'settings' : route.name;
+  const tab = route.name === 'diary' || route.name === 'today' || route.name === 'inbox' || route.name === 'share' || route.name === 'whatsapp' ? 'today' : route.name === 'item' ? 'lists' : route.name === 'day' ? 'history' : route.name === 'conflicts' ? 'settings' : route.name;
 
   return (
     <AppContext.Provider value={state}>

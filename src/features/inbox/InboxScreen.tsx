@@ -94,6 +94,7 @@ export function InboxScreen() {
       <div className="actions">
         <button className="btn primary" onClick={() => navigate('inbox/new?paste=1')}>📋 貼り付けて取り込む</button>
         <button className="btn" onClick={() => navigate('inbox/new')}>＋ 入力して取り込む</button>
+        <button className="btn ghost" onClick={() => navigate('whatsapp')}>💬 WhatsApp から（PC）</button>
       </div>
       <p className="muted small">X・Instagram・Google マップ・ブラウザなどの「共有」から、このアプリ（旅ログ）を選んでも取り込めます。</p>
 
