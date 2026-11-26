@@ -195,5 +195,15 @@ describe('Supabase migration: RLS と sync_push', () => {
     await expect(
       asRole(pg, 'anon', null, (q) => q.query('select public.interpret_enqueue($1, null, $2, $3, null)', [job, 'こんにちは', 'auto'])),
     ).rejects.toThrow(/permission denied/);
+    // 家の PC（service_role）は受付を読み、結果を書き戻せる
+    await pg.transaction(async (tx) => {
+      await tx.exec('set local role service_role');
+      await tx.query(`update public.interpret_jobs set status = 'done', target_text = 'Halo' where id = $1`, [job]);
+      await tx.query(`insert into public.interpret_worker (id, status) values ('home-pc', 'ok')`);
+    });
+    const done = await asRole(pg, 'authenticated', A, async (q) => (await q.query<{ target_text: string }>('select target_text from public.interpret_jobs')).rows);
+    expect(done[0].target_text).toBe('Halo');
+    const hb = await asRole(pg, 'authenticated', A, async (q) => (await q.query('select id from public.interpret_worker')).rows);
+    expect(hb).toHaveLength(1);
   });
 });
