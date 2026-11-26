@@ -221,6 +221,7 @@ export function InterpretScreen() {
   }, []);
 
   const enqueue = async (it: Interpretation) => {
+    if (!it.speaker) it = { ...it, speaker: speakerRef.current };
     await db.interpretations.put(it);
     setCurrentId(it.id);
     autoShowRef.current = it.id;
@@ -286,8 +287,10 @@ export function InterpretScreen() {
     return true;
   };
   const stopLiveOnlyRef = useRef<(() => void) | null>(null);
+  const speakerRef = useRef<'me' | 'them'>('me');
 
-  const startRec = async (recMode: Mode = mode) => {
+  const startRec = async (recMode: Mode = mode, speaker: 'me' | 'them' = 'me') => {
+    speakerRef.current = speaker;
     setError(null);
     setLiveText('');
     if (liveOnly && speechRecognitionAvailable()) {
@@ -418,6 +421,7 @@ export function InterpretScreen() {
     const t = text.trim();
     if (!t) return;
     setText('');
+    speakerRef.current = 'me';
     await enqueue({ id: newId(), createdAt: new Date().toISOString(), mode, inputText: t, sourceText: t, status: 'local', via: 'pc' });
   };
 
@@ -505,10 +509,11 @@ export function InterpretScreen() {
           item={liveBig}
           onClose={() => setBig(null)}
           // 言い直す：同じ向きでもう一度話す（自動のときは日本語として）
-          onRetry={() => void startRec(liveBig.mode === 'auto' ? 'ja-id' : liveBig.mode)}
+          onRetry={() => void startRec(liveBig.mode === 'auto' ? 'ja-id' : liveBig.mode, 'me')}
           // 直す：直した文で訳し直す
           onEdit={(text) =>
             void enqueue({
+              speaker: 'me',
               id: newId(),
               createdAt: new Date().toISOString(),
               mode: liveBig.mode === 'auto' ? (liveBig.sourceLang === 'id' ? 'id-ja' : 'ja-id') : liveBig.mode,
@@ -525,7 +530,7 @@ export function InterpretScreen() {
             liveText,
             pending: current && current.id !== liveBig.id && current.status !== 'done' && !current.targetText ? current : null,
             // 返事は、表示中の訳の言語で話してもらい、反対向きに訳す
-            start: () => void startRec(liveBig.targetLang === 'ja' ? 'ja-id' : 'id-ja'),
+            start: (sp) => void startRec(sp === 'them' ? 'id-ja' : 'ja-id', sp),
             stop: stopRec,
           }}
         />
@@ -681,7 +686,8 @@ interface ReplyControls {
   elapsed: number;
   error: string | null;
   pending: Interpretation | null;
-  start: () => void;
+  /** 返事を録る。them＝相手（Jawab）、me＝自分（答える） */
+  start: (speaker: 'me' | 'them') => void;
   stop: () => void;
 }
 
@@ -741,9 +747,12 @@ function BigCard({
   const [draft, setDraft] = useState('');
   const boxRef = useRef<HTMLDivElement>(null);
   const textRef = useRef<HTMLParagraphElement>(null);
-  const t = item.targetText ?? '';
-  const lang: 'ja' | 'id' = (item.targetLang as 'ja' | 'id') ?? (item.mode === 'id-ja' ? 'ja' : 'id');
-  const userSpoke = item.mode === 'ja-id' || (item.mode === 'auto' && item.sourceLang === 'ja');
+  // 自分が話した文は相手（インドネシア語）向けに、相手が話した文は自分（日本語）向けに出す。
+  // 話した言語が読む人の言語と同じなら（相手が日本語で答えた など）、訳さずにそのまま出す
+  const speaker = item.speaker ?? (item.mode === 'id-ja' ? 'them' : 'me');
+  const lang: 'ja' | 'id' = speaker === 'them' ? 'ja' : 'id';
+  const t = (item.sourceLang === lang ? item.sourceText : item.targetText) ?? '';
+  const userSpoke = speaker === 'me';
   const phase: 'check' | 'show' | 'read' = show !== 'none' ? 'show' : userSpoke ? 'check' : 'read';
 
   // 枠に収まる最大の文字の大きさを探す（画面の向きや大きさが変わったら探し直す）
@@ -913,7 +922,7 @@ function BigCard({
           ) : (
             <button
               className={'bigcard-mic' + (reply.recording ? ' on' : '')}
-              onClick={() => (reply.recording ? reply.stop() : reply.start())}
+              onClick={() => (reply.recording ? reply.stop() : reply.start(phase === 'read' ? 'me' : 'them'))}
               aria-label={reply.recording ? rt.stop : rt.start}
             >
               <span aria-hidden>{reply.recording ? '■' : '🎤'}</span> {reply.recording ? `${rt.stop} ${formatDuration(reply.elapsed)}` : rt.start}

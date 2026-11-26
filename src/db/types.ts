@@ -328,6 +328,8 @@ export interface Interpretation {
   reading?: string | null;
   provider?: string | null;
   error?: string | null;
+  /** 誰が話したか（me＝自分：大きなマイク・答える、them＝相手：Jawab）。表示する言語を決める */
+  speaker?: 'me' | 'them' | null;
   /** pc=家の PC, google=Google 翻訳で代わりに訳した */
   via?: 'pc' | 'google' | null;
 }

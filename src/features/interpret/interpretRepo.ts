@@ -56,18 +56,28 @@ export async function workerState(sb: SupabaseClient): Promise<WorkerState> {
 
 /** 未送信の 1 件を送る（音声のアップロード → 受付）。同じ ID の再送は安全 */
 export async function submit(db: TravelDB, sb: SupabaseClient, ownerId: string, deviceId: string, item: Interpretation) {
-  // スマホで文字にしたものは、文字だけを先に受付に出す（音声はあとから送る）
+  // スマホで文字にしたものは、録音も一緒に送る。家の PC が録音で話した言語を確かめ、
+  // スマホの聞き取りと言語が違えば文字にし直す。録音を送れなければ文字だけで受付に出す
   if (item.inputText) {
+    let path: string | null = item.audioPath ?? null;
+    if (item.audio && !path) {
+      try {
+        await uploadAudio(db, sb, ownerId, item);
+        path = `${ownerId}/interpret/${item.id}.${item.ext || 'webm'}`;
+      } catch {
+        path = null;
+      }
+    }
     const { error } = await sb.rpc('interpret_enqueue', {
       p_id: item.id,
-      p_audio_path: null,
+      p_audio_path: path,
       p_input_text: item.inputText,
       p_mode: item.mode,
       p_device_id: deviceId,
     });
     if (error) throw error;
     await db.interpretations.update(item.id, { status: 'queued', via: 'pc' });
-    if (item.audio) void uploadAudio(db, sb, ownerId, item).catch(() => undefined);
+    if (item.audio && !path) void uploadAudio(db, sb, ownerId, item).catch(() => undefined);
     return;
   }
   let audioPath = item.audioPath ?? null;

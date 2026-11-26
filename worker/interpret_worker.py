@@ -181,43 +181,47 @@ def whisper_model():
     return _whisper
 
 
-def transcribe(audio_file: Path, mode: str) -> tuple[str, str]:
+def transcribe(audio_file: Path, mode: str, hint_text: str | None = None) -> tuple[str, str]:
+    """録音から言語を判定して文字にする。
+
+    使う言語は日本語とインドネシア語だけ。押したボタン（mode）には関係なく、話した言語で決める。
+    日本語ははっきり判定できる（0.99 前後）が、日本人の発音のインドネシア語の短い言葉は
+    アイスランド語などと判定されることがあるので、「日本語らしさ」だけで決める。
+    スマホで聞き取った文（hint_text）があり、言語が合っていれば、それをそのまま使う（速い）。
+    """
     import whisper
 
     model = whisper_model()
-    if mode == "ja-id":
+    hint_lang = "ja" if mode == "ja-id" else "id" if mode == "id-ja" else None
+    audio = whisper.pad_or_trim(whisper.load_audio(str(audio_file)))
+    mel = whisper.log_mel_spectrogram(audio, n_mels=model.dims.n_mels).to(model.device)
+    _, probs = model.detect_language(mel)
+    pj = probs.get("ja", 0)
+    top = max(probs, key=probs.get)
+    if pj >= 0.6:
         lang = "ja"
-    elif mode == "id-ja":
+    elif pj <= 0.15:
         lang = "id"
+    elif hint_text and hint_lang:
+        lang = hint_lang  # どちらとも言えないときは、スマホの聞き取りを信じる
     else:
-        # 使う言語は日本語とインドネシア語だけ。日本語ははっきり判定できる（0.99 前後）が、
-        # 日本人の発音のインドネシア語の短い言葉は、アイスランド語などと判定されることがある。
-        # そこで「日本語らしさ」だけで決め、どちらとも言えないときは両方で文字にして比べる。
-        audio = whisper.pad_or_trim(whisper.load_audio(str(audio_file)))
-        mel = whisper.log_mel_spectrogram(audio, n_mels=model.dims.n_mels).to(model.device)
-        _, probs = model.detect_language(mel)
-        pj = probs.get("ja", 0)
-        top = max(probs, key=probs.get)
-        if pj >= 0.6:
-            lang = "ja"
-        elif pj <= 0.15:
-            lang = "id"
-        else:
-            tries = {}
-            for cand in ("ja", "id"):
-                r = model.transcribe(str(audio_file), language=cand, fp16=True, condition_on_previous_text=False)
-                segs = r.get("segments") or []
-                lp = sum(sg["avg_logprob"] for sg in segs) / max(1, len(segs))
-                tries[cand] = (lp, (r.get("text") or "").strip())
-            lang = "ja" if tries["ja"][0] >= tries["id"][0] else "id"
-            log(f"言語判定 ja={pj:.2f}（両方で比較 ja={tries['ja'][0]:.2f} id={tries['id'][0]:.2f}）→ {lang}")
-            return lang, tries[lang][1]
-        log(f"言語判定 ja={pj:.2f} 最有力={top} → {lang}")
+        tries = {}
+        for cand in ("ja", "id"):
+            r = model.transcribe(str(audio_file), language=cand, fp16=True, condition_on_previous_text=False)
+            segs = r.get("segments") or []
+            lp = sum(sg["avg_logprob"] for sg in segs) / max(1, len(segs))
+            tries[cand] = (lp, (r.get("text") or "").strip())
+        lang = "ja" if tries["ja"][0] >= tries["id"][0] else "id"
+        log(f"言語判定 ja={pj:.2f}（両方で比較 ja={tries['ja'][0]:.2f} id={tries['id'][0]:.2f}）→ {lang}")
+        return lang, tries[lang][1]
+    log(f"言語判定 ja={pj:.2f} 最有力={top} → {lang}（ボタン {hint_lang or '自動'}）")
+    if hint_text and hint_lang == lang:
+        return lang, hint_text.strip()
+    if hint_text:
+        log(f"スマホの聞き取り（{hint_lang}）と話した言語（{lang}）が違うので、文字にし直します")
     result = model.transcribe(str(audio_file), language=lang, fp16=True, condition_on_previous_text=False)
     text = (result.get("text") or "").strip()
-    # インドネシア語と指定されても、日本語の文字で出てきたら日本語として扱う（Jawab で日本語を話した など）
     if lang == "id" and JA_RE.search(text):
-        log("指定はインドネシア語だが日本語として聞き取れたので、日本語として訳します")
         lang = "ja"
     return lang, text
 
@@ -396,7 +400,7 @@ def process(job: dict) -> None:
         audio_file = out_dir / f"{jid}.{ext}"
         if not audio_file.exists():
             audio_file.write_bytes(download_audio(job["audio_path"]))
-        src_lang, text = transcribe(audio_file, mode)
+        src_lang, text = transcribe(audio_file, mode, (job.get("input_text") or "").strip() or None)
         log(f"文字起こし {time.time() - t0:.1f}s [{src_lang}] {text}")
     else:
         text = (job.get("input_text") or "").strip()
