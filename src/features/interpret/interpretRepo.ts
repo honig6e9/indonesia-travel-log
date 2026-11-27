@@ -117,9 +117,40 @@ export async function refresh(db: TravelDB, sb: SupabaseClient, ids?: string[]) 
   await db.transaction('rw', db.interpretations, async () => {
     for (const j of (data ?? []) as JobRow[]) {
       const cur = await db.interpretations.get(j.id);
-      if (cur && cur.via !== 'google') await db.interpretations.update(j.id, fromJob(j));
+      if (!cur || cur.via === 'google') continue;
+      // 手で直した訳は、あとから届いた自動翻訳で上書きしない
+      if (cur.manual) await db.interpretations.update(j.id, { status: 'done', provider: fromJob(j).provider ?? cur.provider });
+      else await db.interpretations.update(j.id, fromJob(j));
     }
   });
+}
+
+/** 比べるための文：全角半角・大文字小文字・空白・文末の句読点をそろえる */
+export function normalizeSource(s: string): string {
+  return s
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[\s。．.!！?？、,]+$/u, '')
+    .trim();
+}
+
+/**
+ * 過去に同じ文を同じ向きで訳していれば、その訳を返す（手で直した訳を優先し、なければ新しいもの）。
+ * 通信や家の PC がなくても使える。
+ */
+export async function findCachedTranslation(db: TravelDB, text: string, srcLang: 'ja' | 'id'): Promise<Interpretation | null> {
+  const key = normalizeSource(text);
+  if (!key) return null;
+  const done = await db.interpretations.where('status').equals('done').toArray();
+  const hits = done.filter((i) => i.via !== 'google' && i.targetText && i.sourceText && i.sourceLang === srcLang && normalizeSource(i.sourceText) === key);
+  hits.sort((a, b) => Number(!!b.manual) - Number(!!a.manual) || b.createdAt.localeCompare(a.createdAt));
+  return hits[0] ?? null;
+}
+
+/** 訳を手で直す（以後、自動翻訳で上書きしない） */
+export async function fixTranslation(db: TravelDB, id: string, text: string) {
+  await db.interpretations.update(id, { targetText: text.trim(), manual: true, status: 'done', error: null });
 }
 
 /** ほかの端末から送った通訳も含め、最近の履歴を取り込む（音声は必要なときに取得） */

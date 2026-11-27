@@ -385,4 +385,8 @@ export interface Interpretation {
   favorite?: boolean | null;
   /** pc=家の PC, google=Google 翻訳で代わりに訳した */
   via?: 'pc' | 'google' | null;
+  /** 訳を手で直した（自動翻訳で上書きしない） */
+  manual?: boolean | null;
+  /** 過去の同じ文の訳を使い回したときの元の ID */
+  cachedFrom?: string | null;
 }

@@ -25,6 +25,8 @@ import {
   workerState,
   type Mode,
   type WorkerState,
+  findCachedTranslation,
+  fixTranslation,
 } from './interpretRepo';
 
 const MAX_MS = 60_000;
@@ -338,8 +340,30 @@ export function InterpretScreen() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
 
-  const enqueue = async (it: Interpretation) => {
+  const enqueue = async (it: Interpretation, opts: { fresh?: boolean } = {}) => {
     if (!it.speaker) it = { ...it, speaker: speakerRef.current };
+    // 過去に同じ文を訳していれば、その訳を使う（通信も家の PC も要らない）。「訳し直す」のときは使わない
+    const text = it.inputText?.trim();
+    if (text && !opts.fresh) {
+      const src: 'ja' | 'id' = it.mode === 'ja-id' ? 'ja' : it.mode === 'id-ja' ? 'id' : guessLang(text);
+      const hit = await findCachedTranslation(db, text, src);
+      if (hit) {
+        await db.interpretations.put({
+          ...it,
+          status: 'done',
+          sourceLang: hit.sourceLang,
+          targetLang: hit.targetLang,
+          targetText: hit.targetText,
+          reading: hit.reading,
+          provider: hit.provider,
+          manual: hit.manual,
+          cachedFrom: hit.id,
+        });
+        setCurrentId(it.id);
+        autoShowRef.current = it.id;
+        return;
+      }
+    }
     await db.interpretations.put(it);
     setCurrentId(it.id);
     autoShowRef.current = it.id;
@@ -675,6 +699,22 @@ export function InterpretScreen() {
           // 言い直す：同じ向きでもう一度話す（自動のときは日本語として）
           onRetry={() => void startRec(liveBig.mode === 'auto' ? 'ja-id' : liveBig.mode, 'me')}
           // 直す：直した文で訳し直す
+          onFix={(text) => void fixTranslation(db, liveBig.id, text).then(() => toast('訳を直しました（自動翻訳で上書きしません）'))}
+          onRetranslate={() =>
+            void enqueue(
+              {
+                speaker: liveBig.speaker ?? 'me',
+                id: newId(),
+                createdAt: new Date().toISOString(),
+                mode: liveBig.mode === 'auto' ? (liveBig.sourceLang === 'id' ? 'id-ja' : 'ja-id') : liveBig.mode,
+                inputText: liveBig.sourceText ?? '',
+                sourceText: liveBig.sourceText ?? '',
+                status: 'local',
+                via: 'pc',
+              },
+              { fresh: true },
+            )
+          }
           onEdit={(text) =>
             void enqueue({
               speaker: 'me',
@@ -704,18 +744,20 @@ export function InterpretScreen() {
 }
 
 function statusLabel(it: Interpretation) {
-  if (it.via === 'google') return 'Google 翻訳で表示';
+  if (it.via === 'google') return '未翻訳（Google 翻訳で表示）';
   switch (it.status) {
     case 'local':
-      return '未送信（端末に保存済み）';
+      return '翻訳待ち（未送信・端末に保存済み）';
     case 'queued':
-      return '家の PC の順番待ち';
+      return '翻訳待ち（家の PC の順番待ち）';
     case 'processing':
-      return '家の PC で処理中';
+      return '翻訳中';
     case 'done':
-      return `完了${it.provider ? `（${providerName(it.provider)}で翻訳）` : ''}`;
+      if (it.manual) return '手動修正済み';
+      if (it.cachedFrom) return '翻訳済み（過去の訳を再利用）';
+      return `翻訳済み${it.provider ? `（${providerName(it.provider)}で翻訳）` : ''}`;
     case 'error':
-      return '失敗';
+      return '翻訳失敗';
   }
 }
 
@@ -922,6 +964,8 @@ function BigCard({
   onEdit,
   initialShow = 'none',
   onToggleFavorite,
+  onFix,
+  onRetranslate,
 }: {
   item: Interpretation;
   onClose: () => void;
@@ -930,6 +974,8 @@ function BigCard({
   onEdit: (text: string) => void;
   initialShow?: 'none' | 'side';
   onToggleFavorite: () => void;
+  onFix: (text: string) => void;
+  onRetranslate: () => void;
 }) {
   const { toast } = useApp();
   // 見せ方：none＝まだ見せていない、face＝向かいの人に（上下反転）、side＝隣の人に（向きはそのまま）
@@ -1001,6 +1047,17 @@ function BigCard({
   const heardLabel = item.audio || item.audioPath ? '聞き取り' : '入力';
   const refining = item.status === 'processing' && !!t;
   const via = refining ? 'ローカル AI の速い訳（より正確な訳を確認中…）' : item.status === 'done' && item.provider ? `${providerName(item.provider)}で翻訳` : '';
+  const via2 = item.manual ? '手動修正済み' : item.cachedFrom ? '過去の訳を再利用' : '';
+  // 訳を手で直す（以後、自動翻訳で上書きしない）
+  const fix = () => {
+    const v = window.prompt('訳を直してください（自動翻訳で上書きしません）', t);
+    if (v != null && v.trim() && v.trim() !== t) onFix(v.trim());
+  };
+  const retranslate = () => {
+    if (!item.sourceText) return;
+    if (item.manual && !window.confirm('手で直した訳はこのまま履歴に残ります。新しく訳し直しますか？')) return;
+    onRetranslate();
+  };
   const copy = (text: string | null | undefined, what: string) =>
     void copyText(text ?? '').then((ok) => toast(ok ? `${what}をコピーしました` : 'コピーできませんでした'));
 
@@ -1052,7 +1109,13 @@ function BigCard({
           </div>
           {details && item.reading && <p className="bigcard-reading">{item.reading}</p>}
           <div className="check-meta">
-            <span className="check-via">{via}</span>
+            <span className="check-via">{via2 || via}</span>
+            <button className="bigcard-copy" disabled={!t || reply.recording} onClick={fix}>
+              ✎ 訳を直す
+            </button>
+            <button className="bigcard-copy" disabled={!item.sourceText || reply.recording || item.status !== 'done'} onClick={retranslate}>
+              ↻ 訳し直す
+            </button>
             <button className="bigcard-copy" disabled={!item.sourceText || reply.recording} onClick={() => copy(item.sourceText, '聞き取り')}>
               📋 聞き取り
             </button>
@@ -1096,7 +1159,7 @@ function BigCard({
         // 聞き取った元の文。逆さにしても回さず、こちら側から確かめられるようにする
         <p className="bigcard-heard">
           {heardLabel}：{item.sourceText}
-          {via && <span className="bigcard-via">　{via}</span>}
+          {(via2 || via) && <span className="bigcard-via">　{via2 || via}</span>}
         </p>
       )}
       <div className={'bigcard-main' + (flip ? ' flip' : '')}>
@@ -1150,6 +1213,9 @@ function BigCard({
         </button>
         <button className="bigcard-copy" aria-label="訳文をコピー" onClick={() => copy(t, '訳')} disabled={!t}>
           📋訳
+        </button>
+        <button className="bigcard-icon" aria-label="訳を直す" onClick={fix} disabled={!t || reply.recording}>
+          ✎
         </button>
         <button className={'bigcard-icon' + (item.favorite ? ' fav-on' : '')} aria-label={item.favorite ? 'よく使うから外す' : 'よく使うに入れる'} onClick={onToggleFavorite}>
           {item.favorite ? '★' : '☆'}

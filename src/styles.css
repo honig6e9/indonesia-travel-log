@@ -381,7 +381,7 @@ p { margin: 6px 0; }
 .bigcard-copy:disabled { opacity: 0.4; }
 .bigcard-actions .bigcard-show { white-space: nowrap; padding: 0 12px; min-height: 44px; font-size: 1rem; }
 .bigcard-actions .bigcard-copy { padding: 0 7px; font-size: 0.85rem; }
-.bigcard-actions .bigcard-icon { min-width: 38px; }
+.bigcard-actions .bigcard-icon { min-width: 34px; }
 .bigcard-actions { gap: 2px; }
 .order-select { min-height: 36px; font-size: 0.85rem; padding: 0 6px; border-radius: 10px; width: auto; }
 .here-pos { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
