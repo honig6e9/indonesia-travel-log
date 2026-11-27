@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '../../app/context';
 import { navigate } from '../../app/router';
@@ -8,6 +8,7 @@ import { timeIn, todayIn } from '../../lib/dates';
 import { categoriesFor } from '../checklist/checklistRepo';
 import { googleTranslateUrl } from '../interpret/interpretRepo';
 import { MediaSheet } from '../media/MediaSheet';
+import { inboxTranslationState, needsTranslation, requestInboxTranslation } from './inboxTranslate';
 import { PhotoButton } from '../media/PhotoButton';
 import {
   convertedTo,
@@ -28,6 +29,7 @@ export function InboxDetailScreen(props: { id: string }) {
   const item = useLiveQuery(() => db.inboxItems.get(props.id), [db, props.id]);
   const media = useLiveQuery(() => inboxMedia(db, props.id), [db, props.id]) ?? [];
   const converted = useLiveQuery(() => convertedTo(db, props.id), [db, props.id]) ?? [];
+  const tr = useLiveQuery(() => inboxTranslationState(db, props.id), [db, props.id]);
   const [draft, setDraft] = useState<InboxItem | null>(null);
   const [kind, setKind] = useState<TargetKind>('task');
   const [splitMode, setSplitMode] = useState(false);
@@ -35,8 +37,14 @@ export function InboxDetailScreen(props: { id: string }) {
   const [mediaSheet, setMediaSheet] = useState<Media | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // 家の PC の訳が届いたら、日本語訳の欄にも反映する（欄を手で書き換えていなければ）
+  const prevTrans = useRef<string | null>(null);
   useEffect(() => {
-    if (item && (!draft || draft.id !== item.id)) setDraft(item);
+    if (!item) return;
+    if (!draft || draft.id !== item.id) setDraft(item);
+    else if (prevTrans.current !== null && item.translatedText !== prevTrans.current && draft.translatedText === prevTrans.current)
+      setDraft({ ...draft, translatedText: item.translatedText, translationSource: item.translationSource });
+    prevTrans.current = item.translatedText;
   }, [item, draft]);
 
   if (item === undefined) return <div className="screen"><p className="muted">読み込み中…</p></div>;
@@ -56,6 +64,7 @@ export function InboxDetailScreen(props: { id: string }) {
       title: draft.title.trim() || item.title,
       memo: draft.memo,
       translatedText: draft.translatedText,
+      ...(draft.translatedText !== item.translatedText ? { translationSource: draft.translatedText.trim() ? ('manual' as const) : null } : {}),
       category: draft.category,
       area: draft.area,
       plannedDate: draft.plannedDate || null,
@@ -129,6 +138,36 @@ export function InboxDetailScreen(props: { id: string }) {
       <Field label="日本語訳">
         <textarea rows={2} value={draft.translatedText} onChange={(e) => set({ translatedText: e.target.value })} />
       </Field>
+      {needsTranslation(item) && (
+        <div className="actions">
+          <span className="muted small">
+            {tr?.state === 'waiting'
+              ? '翻訳待ち（家の PC）'
+              : tr?.state === 'translating'
+                ? '翻訳中…'
+                : tr?.state === 'failed'
+                  ? `翻訳失敗：${tr.job?.error ?? ''}`
+                  : item.translationSource === 'manual'
+                    ? '手動修正済み'
+                    : item.translationSource === 'pc'
+                      ? `翻訳済み（家の PC：${tr?.job?.provider ?? ''}）`
+                      : '未翻訳'}
+          </span>
+          <button
+            className="btn small"
+            disabled={tr?.state === 'waiting' || tr?.state === 'translating'}
+            onClick={async () => {
+              if (item.translationSource === 'manual' && !confirm('手で入れた日本語訳があります。家の PC の訳で置き換えますか？')) return;
+              if (item.translationSource === 'manual') await updateInboxItem(ctx, item, { translationSource: null });
+              await requestInboxTranslation(db, item);
+              window.dispatchEvent(new Event('itl-inbox-translate'));
+              toast('家の PC に訳を頼みました（翻訳待ち）');
+            }}
+          >
+            {item.translationSource ? '↻ 家の PC で訳し直す' : '家の PC で訳す'}
+          </button>
+        </div>
+      )}
       {item.sourceText && (
         <a className="link small" href={googleTranslateUrl(item.sourceText.slice(0, 1500), 'auto', 'ja')} target="_blank" rel="noreferrer">
           Google 翻訳で開く

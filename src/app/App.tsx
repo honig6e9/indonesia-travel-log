@@ -32,6 +32,7 @@ import { InboxDetailScreen } from '../features/inbox/InboxDetailScreen';
 import { QuickAddScreen } from '../features/inbox/QuickAddScreen';
 import { WhatsAppScreen } from '../features/inbox/WhatsAppScreen';
 import { HereSheet } from '../features/notes/HereSheet';
+import { processInboxTranslations } from '../features/inbox/inboxTranslate';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
@@ -168,6 +169,20 @@ function Workspaced(props: {
   const db = useMemo(() => openWorkspaceDb(ws), [ws]);
   const ctx = useMemo(() => ({ db, ownerId: ws.kind === 'cloud' ? ws.ownerId : null }), [db, ws]);
   const sync = useSyncController(ws, db, session, device);
+  // 未整理ボックスの翻訳待ち：開いている間は 20 秒ごと・通信が戻ったとき・依頼したときに送り、届いた訳を入れる
+  useEffect(() => {
+    const canPc = !!supabase && !!session && ws.kind === 'cloud' && session.user.id === ws.ownerId;
+    const run = () => void processInboxTranslations(ctx, canPc ? supabase : null, canPc ? ws.ownerId : null, device.id).catch(() => undefined);
+    run();
+    const t = window.setInterval(run, 20_000);
+    window.addEventListener('online', run);
+    window.addEventListener('itl-inbox-translate', run);
+    return () => {
+      window.clearInterval(t);
+      window.removeEventListener('online', run);
+      window.removeEventListener('itl-inbox-translate', run);
+    };
+  }, [ctx, session, ws, device.id]);
   const trip = useLiveQuery(() => getActiveTrip(db), [db]);
   const tripLoaded = trip !== undefined;
   const recordingRef = useRef(false);

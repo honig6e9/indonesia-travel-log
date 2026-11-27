@@ -214,6 +214,8 @@ export interface InboxItem extends BaseRecord {
   textHash: string;
   /** 共有で受け取ったときの受信 ID */
   shareId?: string | null;
+  /** 日本語訳の出どころ：pc＝家の PC で自動翻訳、manual＝手で入れた（自動で上書きしない） */
+  translationSource?: 'pc' | 'manual' | null;
 }
 
 export interface Link extends BaseRecord {
@@ -389,4 +391,8 @@ export interface Interpretation {
   manual?: boolean | null;
   /** 過去の同じ文の訳を使い回したときの元の ID */
   cachedFrom?: string | null;
+  /** 未整理ボックスの原文を訳す依頼（通訳の履歴には出さない） */
+  inboxId?: string | null;
+  /** 訳を未整理ボックスに入れ終えた */
+  inboxDone?: boolean | null;
 }

@@ -60,3 +60,33 @@ describe('手で直した訳', () => {
     expect(after?.status).toBe('done');
   });
 });
+
+describe('未整理ボックスの翻訳待ち', () => {
+  it('インドネシア語の原文だけ依頼し、届いた訳を入れる。手で入れた訳は上書きしない', async () => {
+    const { createTrip } = await import('../features/daily/tripRepo');
+    const { buildInboxItem, saveInboxItem } = await import('../features/inbox/inboxRepo');
+    const { requestInboxTranslation, applyInboxTranslations, inboxTranslationState } = await import('../features/inbox/inboxTranslate');
+    const ctx = { db, ownerId: null };
+    const trip = await createTrip(ctx);
+    const id1 = await buildInboxItem(trip.id, { sourceType: 'clipboard', sourceText: 'Kalau ke Bandung, kamu harus coba batagor.' });
+    const ja = await buildInboxItem(trip.id, { sourceType: 'clipboard', sourceText: '駅の近くのワルン' });
+    const manual = { ...(await buildInboxItem(trip.id, { sourceType: 'clipboard', sourceText: 'Jangan pedas, ya.' })), translatedText: '辛くしないでね', translationSource: 'manual' as const };
+    for (const x of [id1, ja, manual]) await saveInboxItem(ctx, x);
+
+    expect(await requestInboxTranslation(db, ja)).toBeNull();
+    const j1 = (await requestInboxTranslation(db, id1))!;
+    const j2 = (await requestInboxTranslation(db, manual))!;
+    expect(j1.mode).toBe('id-ja');
+    expect((await inboxTranslationState(db, id1.id)).state).toBe('waiting');
+
+    // 家の PC の訳が届いた
+    await db.interpretations.update(j1.id, { status: 'done', targetText: 'バンドンに行くならバタゴールを食べてみて', provider: 'codex' });
+    await db.interpretations.update(j2.id, { status: 'done', targetText: '辛くしないで', provider: 'codex' });
+    expect(await applyInboxTranslations(ctx)).toBe(1);
+    expect((await db.inboxItems.get(id1.id))?.translatedText).toBe('バンドンに行くならバタゴールを食べてみて');
+    expect((await db.inboxItems.get(id1.id))?.translationSource).toBe('pc');
+    expect((await db.inboxItems.get(manual.id))?.translatedText).toBe('辛くしないでね');
+    expect((await inboxTranslationState(db, id1.id)).state).toBe('done');
+    expect(await applyInboxTranslations(ctx)).toBe(0); // 入れ終えたものはもう触らない
+  });
+});

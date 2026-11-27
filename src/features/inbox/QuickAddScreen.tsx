@@ -23,6 +23,7 @@ import {
   type TargetKind,
 } from './inboxRepo';
 import { deleteShare, getShare, type PendingShare } from './shareStore';
+import { requestInboxTranslation } from './inboxTranslate';
 
 type Dest = 'inbox' | TargetKind;
 const DESTS: Dest[] = ['inbox', 'task', 'food', 'place', 'idea'];
@@ -150,7 +151,9 @@ export function QuickAddScreen(props: { shareId: string | null; shareError?: boo
           });
           await saveInboxItem(ctx, item);
           if (i === 0) await saveImages(item.id);
+          await requestInboxTranslation(db, item);
         }
+        window.dispatchEvent(new Event('itl-inbox-translate'));
         await finish(`未整理ボックスに ${entries.length} 件を保存しました`, 'inbox');
       } else {
         const item = await buildInboxItem(trip.id, {
@@ -168,8 +171,10 @@ export function QuickAddScreen(props: { shareId: string | null; shareError?: boo
           priority,
           shareId: share?.id ?? null,
         });
-        await saveInboxItem(ctx, item);
+        await saveInboxItem(ctx, { ...item, translationSource: item.translatedText ? 'manual' : null });
         await saveImages(item.id);
+        // インドネシア語の原文は、訳を手で入れていなければ家の PC に訳を頼む（翻訳待ち）
+        if (!item.translatedText && (await requestInboxTranslation(db, item))) window.dispatchEvent(new Event('itl-inbox-translate'));
         await finish('未整理ボックスに保存しました', 'inbox');
       }
     } catch (e) {

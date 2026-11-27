@@ -227,7 +227,8 @@ export function InterpretScreen() {
   const streamRef = useRef<MediaStream | null>(null);
   const startRef = useRef(0);
 
-  const items = useLiveQuery(() => db.interpretations.orderBy('createdAt').reverse().limit(60).toArray(), [db]) ?? [];
+  // 未整理ボックスの翻訳依頼は通訳の履歴に出さない
+  const items = useLiveQuery(async () => (await db.interpretations.orderBy('createdAt').reverse().limit(120).toArray()).filter((i) => !i.inboxId).slice(0, 60), [db]) ?? [];
   const current = items.find((i) => i.id === currentId) ?? null;
 
   // この画面で送った 1 件の訳が届いたら、すぐ全画面で見せる
