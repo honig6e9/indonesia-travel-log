@@ -226,6 +226,7 @@ export async function saveExperience(
           personalAmount: prev?.personalAmount ?? null,
           category: '食事',
           shop: exp.shop,
+          location: exp.location ?? prev?.location ?? null,
           partySize: partySize ?? prev?.partySize ?? null,
           paymentMethod: prev?.paymentMethod ?? '',
           note: prev?.note || item.title,

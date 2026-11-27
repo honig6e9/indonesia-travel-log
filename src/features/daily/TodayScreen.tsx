@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '../../app/context';
 import { navigate } from '../../app/router';
 import { Thumb } from '../../components/ui';
+import { recordVisitLocation } from '../checklist/visitLocation';
 import { getSetting } from '../../db/db';
 import type { ChecklistItem, Expense, Media, Note } from '../../db/types';
 import { addDays, dayLabel, shortDate, timeIn, todayIn, weekdayJa } from '../../lib/dates';
@@ -77,6 +78,8 @@ export function TodayScreen() {
   const toggle = async (item: ChecklistItem) => {
     const next = item.status === 'done' ? 'open' : 'done';
     await setItemStatus(ctx, item, next, date);
+    // 店・場所に行ったものは、その場所を記録する（位置情報が許可されているときだけ）
+    if (next === 'done') void recordVisitLocation(ctx, item);
     if (next === 'open') {
       toast(`「${item.title}」のチェックを外しました${item.type === 'food' ? '（実食の記録は残っています）' : ''}`, {
         action: { label: '元に戻す', run: () => void setItemStatus(ctx, { ...item, status: 'open' }, 'done', item.completedDate ?? date) },
@@ -285,6 +288,7 @@ export function CheckRow(props: { item: ChecklistItem; onToggle: (i: ChecklistIt
               i.area,
               period && !overdue && `予定 ${formatPeriod(period)}`,
               i.completedDate && `完了 ${i.completedDate}`,
+              i.location && '📍',
               i.priority === 'high' && '優先度:高',
               i.status === 'skipped' && '見送り',
             ]

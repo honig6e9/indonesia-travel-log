@@ -185,10 +185,12 @@ export async function buildArticleExport(db: TravelDB, trip: Trip, o: ExportOpti
   const statusJa = (i: ChecklistItem) => (i.status === 'skipped' ? '見送り' : i.status === 'done' ? TYPE_TEXT[i.type].done : TYPE_TEXT[i.type].open);
   root.file('csv/tasks.csv', toCsv(['タイトル', '分類', 'エリア', '予定日', '優先度', '状態', '完了日', '体験メモ', '公開区分'], tasks.map((i) => [i.title, i.category, i.area, i.plannedDate, i.priority, statusJa(i), i.completedDate, i.note, VISIBILITY_LABEL[i.visibility]])));
   root.file('csv/food_wishlist.csv', toCsv(['料理名', '現地表記', '店・地域', '目安予算(IDR)', '予定日', '状態', '食べた日', 'メモ'], foods.map((i) => [i.title, i.localName, i.area, i.targetPrice, i.plannedDate, statusJa(i), i.completedDate, i.note])));
-  root.file('csv/places.csv', toCsv(['場所', '分類', '地域・住所', '予定日', '優先度', '状態', '行った日', 'メモ', '公開区分'], places.map((i) => [i.title, i.category, i.area, i.plannedDate, i.priority, statusJa(i), i.completedDate, i.note, VISIBILITY_LABEL[i.visibility]])));
-  root.file('csv/food_experiences.csv', toCsv(['日付', '料理', '店名', '価格', '通貨', '評価', '感想', '再訪したい'], exps.map((e) => [e.localDate, itemById.get(e.checklistItemId)?.title, e.shop, e.price, e.currency, e.rating, e.comment, e.revisit == null ? '' : e.revisit ? 'はい' : 'いいえ'])));
+  // 座標（現在地）は私的な情報なので、全素材の出力にだけ入れる
+  const loc = (v: string | null | undefined) => (o.mode === 'all' ? (v ?? '') : '');
+  root.file('csv/places.csv', toCsv(['場所', '分類', '地域・住所', '予定日', '優先度', '状態', '行った日', 'メモ', '公開区分', '位置'], places.map((i) => [i.title, i.category, i.area, i.plannedDate, i.priority, statusJa(i), i.completedDate, i.note, VISIBILITY_LABEL[i.visibility], loc(i.location)])));
+  root.file('csv/food_experiences.csv', toCsv(['日付', '料理', '店名', '価格', '通貨', '評価', '感想', '再訪したい', '位置'], exps.map((e) => [e.localDate, itemById.get(e.checklistItemId)?.title, e.shop, e.price, e.currency, e.rating, e.comment, e.revisit == null ? '' : e.revisit ? 'はい' : 'いいえ', loc(e.location)])));
   if (o.mode === 'all') {
-    root.file('csv/expenses.csv', toCsv(['日付', '種別', '金額', '通貨', '自分の負担', 'カテゴリ', '店名', '人数', '支払方法', 'メモ'], expenses.map((e) => [e.localDate, e.kind === 'refund' ? '返金' : '支出', e.amount, e.currency, e.personalAmount, e.category, e.shop, e.partySize, e.paymentMethod, e.note])));
+    root.file('csv/expenses.csv', toCsv(['日付', '種別', '金額', '通貨', '自分の負担', 'カテゴリ', '店名', '人数', '支払方法', 'メモ', '位置'], expenses.map((e) => [e.localDate, e.kind === 'refund' ? '返金' : '支出', e.amount, e.currency, e.personalAmount, e.category, e.shop, e.partySize, e.paymentMethod, e.note, e.location ?? ''])));
     root.file('csv/daily_ratings.csv', toCsv(['日付', '生活への慣れ', '語学の通用感', '満足度', '疲労', '帰りたい気持ち', '会話時間(分)'], logs.map((l) => [l.localDate, l.ratings?.adaptation, l.ratings?.language, l.ratings?.satisfaction, l.ratings?.fatigue, l.ratings?.homesick, l.conversationMinutes])));
   }
   root.file('csv/media_index.csv', toCsv(['ファイル', '日付', '説明', 'カテゴリ', 'タグ', '撮影日時(推定)', '公開区分'], media.filter((m) => photoPaths.has(m.id)).map((m) => [photoPaths.get(m.id)!.replace('../', ''), m.localDate, m.caption, m.category, m.tags.join(' '), m.capturedAt, VISIBILITY_LABEL[m.visibility]])));

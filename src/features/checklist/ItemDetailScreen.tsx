@@ -3,6 +3,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '../../app/context';
 import { navigate } from '../../app/router';
 import { Empty, Field, Sheet, Stars, Thumb, VisibilitySelect, numOrNull } from '../../components/ui';
+import { LocationField } from '../../components/LocationField';
+import { recordVisitLocation, RECORDS_VISIT } from './visitLocation';
 import { alive } from '../../db/repo';
 import type { ChecklistItem, Currency, FoodExperience, Media, Priority } from '../../db/types';
 import { formatMoney } from '../../lib/format';
@@ -78,6 +80,7 @@ export function ItemDetailScreen(props: { id: string }) {
             onClick={async () => {
               if (s === item.status) return;
               await setItemStatus(ctx, item, s, date);
+              if (s === 'done') void recordVisitLocation(ctx, item).then((loc) => loc && toast(`場所を記録しました（${loc}）`));
               toast(s === 'done' ? `${date} に記録しました` : s === 'open' && isFood ? '状態を戻しました（実食の記録は残っています）' : '状態を変更しました');
             }}
           >
@@ -113,6 +116,12 @@ export function ItemDetailScreen(props: { id: string }) {
       <Field label={TYPE_TEXT[item.type].area}>
         <input value={draft.area} onChange={(e) => set({ area: e.target.value })} />
       </Field>
+      <LocationField
+        label={item.type === 'food' ? '食べた場所（座標）' : item.type === 'place' ? '行った場所（座標）' : '場所（座標）'}
+        hint={RECORDS_VISIT(item) ? '「済み」にしたとき、位置情報が許可されていれば自動で入ります' : undefined}
+        value={draft.location}
+        onChange={(location) => set({ location })}
+      />
       <div className="row">
         <Field label="予定日">
           <input type="date" value={draft.plannedDate ?? ''} onChange={(e) => set({ plannedDate: e.target.value || null })} />
@@ -258,6 +267,7 @@ function ExperienceSheet(props: { item: ChecklistItem; exp: FoodExperience; onCl
       <Field label="店名">
         <input value={e.shop} onChange={(x) => update({ shop: x.target.value })} />
       </Field>
+      <LocationField label="食べた場所（任意）" value={e.location} onChange={(location) => update({ location })} />
       <div className="row">
         <Field label="実際の価格">
           <input inputMode="numeric" value={priceText} onChange={(x) => setPriceText(x.target.value)} />

@@ -102,6 +102,8 @@ export interface ChecklistItem extends BaseRecord {
   note: string;
   sortOrder: number;
   visibility: Visibility;
+  /** 行った・食べた場所（現在地の座標など） */
+  location?: string | null;
 }
 
 export interface FoodExperience extends BaseRecord {
@@ -117,6 +119,8 @@ export interface FoodExperience extends BaseRecord {
   visibility: Visibility;
   /** 「食べた」チェックで自動作成された初回レコード */
   auto?: boolean;
+  /** 食べた場所（現在地の座標など） */
+  location?: string | null;
 }
 
 export type EvidenceType = '' | 'fact' | 'hearsay' | 'opinion' | 'unverified';
@@ -152,6 +156,8 @@ export interface Expense extends BaseRecord {
   note: string;
   kind: 'expense' | 'refund';
   receiptMediaId?: string | null;
+  /** 支払った場所（現在地の座標など） */
+  location?: string | null;
 }
 
 export interface Media extends BaseRecord {

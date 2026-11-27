@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../../app/context';
 import { Field, Sheet, numOrNull, useDraft } from '../../components/ui';
+import { LocationField } from '../../components/LocationField';
 import type { Currency, Expense } from '../../db/types';
 import { blankExpense, deleteExpense, EXPENSE_CATEGORIES, PAYMENT_METHODS, saveExpense, validateExpense } from './expenseRepo';
 
@@ -91,6 +92,7 @@ export function ExpenseSheet(props: { expense?: Expense; date: string; onClose: 
       <Field label="店名">
         <input value={e.shop} onChange={(x) => update({ shop: x.target.value })} />
       </Field>
+      <LocationField label="場所（任意）" value={e.location} onChange={(location) => update({ location })} />
       <Field label="支払方法">
         <select value={e.paymentMethod} onChange={(x) => update({ paymentMethod: x.target.value })}>
           {PAYMENT_METHODS.map((p) => (

@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '../../app/context';
 import { navigate } from '../../app/router';
 import { Empty, Sheet } from '../../components/ui';
+import { recordVisitLocation } from './visitLocation';
 import type { ChecklistItem, ChecklistType } from '../../db/types';
 import { percent } from '../../lib/format';
 import { CheckRow } from '../daily/TodayScreen';
@@ -61,6 +62,8 @@ export function ListsScreen(props: { type: ChecklistType }) {
   const toggle = async (item: ChecklistItem) => {
     const next = item.status === 'done' ? 'open' : 'done';
     await setItemStatus(ctx, item, next, date);
+    // 店・場所に行ったものは、その場所を記録する（位置情報が許可されているときだけ）
+    if (next === 'done') void recordVisitLocation(ctx, item);
     if (next === 'open')
       toast(`チェックを外しました${type === 'food' ? '（実食の記録は残っています）' : ''}`, {
         action: { label: '元に戻す', run: () => void setItemStatus(ctx, { ...item, status: 'open' }, 'done', item.completedDate ?? date) },
