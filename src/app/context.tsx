@@ -28,6 +28,8 @@ export interface AppState {
   device: { id: string; name: string };
   setDeviceName: (name: string) => Promise<void>;
   explicitLogout: () => Promise<void>;
+  /** 「📍 現在地」の記録を開く（どの画面からでも） */
+  openHere: () => void;
 }
 
 export const AppContext = createContext<AppState | null>(null);

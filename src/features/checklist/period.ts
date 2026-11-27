@@ -55,3 +55,16 @@ export function formatPeriod(p: Period): string {
   const [, em, ed] = p.end.split('-');
   return em === sm ? `${shortDate(p.start)}〜${Number(ed)}` : `${shortDate(p.start)}〜${shortDate(p.end)}`;
 }
+
+/** 時系列の並び：予定日（期間の始まり）→ 期間の終わり → 登録の並び。予定日のないものは最後に登録の並びで */
+export function byPlanned(a: ChecklistItem, b: ChecklistItem): number {
+  const pa = a.plannedDate ?? '';
+  const pb = b.plannedDate ?? '';
+  if (pa && !pb) return -1;
+  if (!pa && pb) return 1;
+  if (pa !== pb) return pa < pb ? -1 : 1;
+  const ea = periodOf(a)?.end ?? '';
+  const eb = periodOf(b)?.end ?? '';
+  if (ea !== eb) return ea < eb ? -1 : 1;
+  return a.sortOrder - b.sortOrder;
+}

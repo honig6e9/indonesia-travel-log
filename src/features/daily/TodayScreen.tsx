@@ -16,10 +16,9 @@ import { MediaSheet } from '../media/MediaSheet';
 import { mediaOn } from '../media/mediaRepo';
 import { PhotoButton } from '../media/PhotoButton';
 import { NoteSheet } from '../notes/NoteSheet';
-import { blankNote, notesOn, saveNote } from '../notes/notesRepo';
-import { formatPosition, getCurrentPosition } from '../../lib/geo';
+import { notesOn } from '../notes/notesRepo';
 import { SyncStatusLine } from '../sync/SyncStatus';
-import { formatPeriod, isOverdue, isPlannedOn, periodOf } from '../checklist/period';
+import { byPlanned, formatPeriod, isOverdue, isPlannedOn, periodOf } from '../checklist/period';
 import { pendingInboxCount } from '../inbox/inboxRepo';
 import { usePendingShares } from '../inbox/InboxScreen';
 import { RatingsCard } from './RatingsCard';
@@ -50,7 +49,7 @@ export function DateHeader() {
 }
 
 export function TodayScreen() {
-  const { db, ctx, trip, date, toast, today } = useApp();
+  const { db, ctx, trip, date, toast, today, openHere } = useApp();
   const [sheet, setSheet] = useState<null | { kind: 'note'; note?: Note } | { kind: 'expense'; expense?: Expense } | { kind: 'media'; media: Media }>(null);
 
   const diary = useLiveQuery(() => loadDiary(db, trip.id, date), [db, trip.id, date]);
@@ -67,7 +66,7 @@ export function TodayScreen() {
 
   // 今日のやること：予定日がこの日のもの＋この日に完了したもの。なければ未完了の上位
   // 選んだ日が予定（期間）に入るもの＋その日に完了したもの
-  const todays = tasks.filter((t) => isPlannedOn(t, date) || (t.status === 'done' && t.completedDate === date));
+  const todays = tasks.filter((t) => isPlannedOn(t, date) || (t.status === 'done' && t.completedDate === date)).sort(byPlanned);
   const overdueCount = tasks.filter((t) => isOverdue(t, today)).length;
   // 予定のない日は未完了の上位を出す。予定を過ぎたものは下の「予定を過ぎた未完了」ボタンにまとめ、ここには出さない
   const shownTasks = todays.length ? todays : tasks.filter((t) => t.status === 'open' && !isOverdue(t, today)).sort((a, b) => prio(a) - prio(b)).slice(0, 3);
@@ -92,27 +91,6 @@ export function TodayScreen() {
   };
 
   // 📍 現在地：押すだけでメモとして記録する（あとから本文を書き足せる）
-  const [locating, setLocating] = useState(false);
-  const recordHere = async () => {
-    setLocating(true);
-    try {
-      const pos = await getCurrentPosition();
-      const note = await saveNote(ctx, {
-        ...blankNote(trip.id, date),
-        body: `📍 現在地（${timeIn(trip.timeZone, new Date().toISOString())}）`,
-        category: '観光・移動',
-        location: formatPosition(pos),
-      });
-      toast(`現在地を記録しました（±${Math.round(pos.accuracy)}m）`, {
-        action: { label: 'メモを書く', run: () => setSheet({ kind: 'note', note }) },
-      });
-    } catch (e) {
-      toast((e as Error).message, { kind: 'error' });
-    } finally {
-      setLocating(false);
-    }
-  };
-
   const answered = diary?.answeredIds.size ?? 0;
   const skipped = diary?.skippedIds.size ?? 0;
   const total = diary?.questions.length ?? 0;
@@ -202,9 +180,7 @@ export function TodayScreen() {
           <button className="btn" onClick={() => setSheet({ kind: 'note' })}>📝 メモ</button>
           <PhotoButton date={date} />
           <button className="btn" onClick={() => setSheet({ kind: 'expense' })}>💰 支出</button>
-          <button className="btn" disabled={locating} onClick={() => void recordHere()}>
-            {locating ? '取得中…' : '📍 現在地'}
-          </button>
+          <button className="btn" onClick={openHere}>📍 現在地</button>
         </div>
         {notes.length > 0 && (
           <ul className="list">

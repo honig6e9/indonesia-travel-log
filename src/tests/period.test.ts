@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChecklistItem } from '../db/types';
-import { endFromText, formatPeriod, isOverdue, isPlannedOn, periodOf } from '../features/checklist/period';
+import { byPlanned, endFromText, formatPeriod, isOverdue, isPlannedOn, periodOf } from '../features/checklist/period';
 
 const item = (p: Partial<ChecklistItem>): ChecklistItem => ({
   id: 'x', tripId: 't', type: 'task', title: '', category: '', area: '', plannedDate: null, status: 'open',
@@ -28,5 +28,15 @@ describe('期間と予定を過ぎた判定', () => {
     expect(formatPeriod(periodOf(item({ title: 'Big Bang', note: '12/25〜1/5', plannedDate: '2026-12-25' }))!)).toBe('12/25〜1/5');
     // 終了日が入っていれば、そちらを使う
     expect(periodOf(item({ title: '（12/4〜6）', plannedDate: '2026-12-04', plannedEndDate: '2026-12-10' }))!.end).toBe('2026-12-10');
+  });
+});
+
+
+describe('時系列の並び', () => {
+  const it0 = (title: string, plannedDate: string | null, sortOrder: number, plannedEndDate: string | null = null) =>
+    ({ id: title, title, note: '', plannedDate, plannedEndDate, sortOrder, status: 'open' }) as unknown as ChecklistItem;
+  it('予定日の順に並べ、同じ日は短い期間・登録順、予定日のないものは最後に登録順', () => {
+    const items = [it0('予定なしB', null, 1), it0('12/5', '2026-12-05', 2), it0('12/1〜3', '2026-12-01', 5, '2026-12-03'), it0('予定なしA', null, 0), it0('12/1', '2026-12-01', 9)];
+    expect([...items].sort(byPlanned).map((i) => i.title)).toEqual(['12/1', '12/1〜3', '12/5', '予定なしA', '予定なしB']);
   });
 });

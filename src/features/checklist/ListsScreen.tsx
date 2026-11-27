@@ -10,7 +10,7 @@ import { CheckRow } from '../daily/TodayScreen';
 import { addItems, listItems, parseBulk, parseImportFile, progress, SAMPLE_FOODS, SAMPLE_TASKS, setItemStatus, TYPE_TEXT, type ImportItem } from './checklistRepo';
 import { pendingInboxCount } from '../inbox/inboxRepo';
 import { ImportSheet } from './ImportSheet';
-import { isOverdue, isPlannedOn } from './period';
+import { byPlanned, isOverdue, isPlannedOn } from './period';
 import { transact } from '../../db/repo';
 
 type StatusFilter = 'all' | 'open' | 'done' | 'skipped';
@@ -42,7 +42,13 @@ export function ListsScreen(props: { type: ChecklistType }) {
   const plannedFromQuery = params.get('date');
 
   const areas = useMemo(() => [...new Set(items.map((i) => i.area).filter(Boolean))], [items]);
-  const filtered = items.filter(
+  // 並び：予定日の順（時系列）か、登録の順（手動の並べ替え）
+  const [order, setOrderState] = useState<'date' | 'manual'>(() => (localStorage.getItem('itl-list-order') === 'manual' ? 'manual' : 'date'));
+  const setOrder = (o: 'date' | 'manual') => {
+    localStorage.setItem('itl-list-order', o);
+    setOrderState(o);
+  };
+  const unsorted = items.filter(
     (i) =>
       (status === 'all' || i.status === status) &&
       (dateF === 'all' ||
@@ -54,6 +60,7 @@ export function ListsScreen(props: { type: ChecklistType }) {
       (!prio || i.priority === prio) &&
       (!q || [i.title, i.localName, i.area, i.note].some((s) => s?.toLowerCase().includes(q.toLowerCase()))),
   );
+  const filtered = order === 'date' ? [...unsorted].sort(byPlanned) : unsorted;
   const p = progress(items);
   // 予定を過ぎた未完了は、ふだんの一覧から外して最後にまとめる（「予定を過ぎた未完了」で絞り込んだときはそれだけを出す）
   const overdueList = dateF === 'overdue' ? [] : filtered.filter((i) => isOverdue(i, today));
@@ -142,7 +149,19 @@ export function ListsScreen(props: { type: ChecklistType }) {
             }}
           />
         </label>
-        <button className="btn small ghost" onClick={() => setReorder((r) => !r)}>{reorder ? '並べ替えを終える' : '並べ替え'}</button>
+        <select className="order-select" value={order} onChange={(e) => setOrder(e.target.value as 'date' | 'manual')} aria-label="並び順">
+          <option value="date">並び：予定日の順</option>
+          <option value="manual">並び：登録の順</option>
+        </select>
+        <button
+          className="btn small ghost"
+          onClick={() => {
+            if (!reorder) setOrder('manual'); // 手動で並べた順を見られるように
+            setReorder((r) => !r);
+          }}
+        >
+          {reorder ? '並べ替えを終える' : '並べ替え'}
+        </button>
       </div>
 
       {dateF === 'overdue' && (

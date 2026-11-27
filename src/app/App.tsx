@@ -31,6 +31,7 @@ import { InboxScreen } from '../features/inbox/InboxScreen';
 import { InboxDetailScreen } from '../features/inbox/InboxDetailScreen';
 import { QuickAddScreen } from '../features/inbox/QuickAddScreen';
 import { WhatsAppScreen } from '../features/inbox/WhatsAppScreen';
+import { HereSheet } from '../features/notes/HereSheet';
 import { UpdateBanner } from '../components/UpdateBanner';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 
@@ -190,6 +191,7 @@ function Workspaced(props: {
   }, [tripLoaded, trip, creating, ws.kind, lastSync, ctx]);
 
   const [date, setDateState] = useState<string | null>(() => sessionStorage.getItem('itl-date'));
+  const [hereOpen, setHereOpen] = useState(false);
   const today = trip ? todayIn(trip.timeZone) : '';
   const effectiveDate = date ?? today;
   const setDate = useCallback((d: string) => {
@@ -249,6 +251,7 @@ function Workspaced(props: {
       props.setDevice({ ...device, name });
     },
     explicitLogout: props.onLogout,
+    openHere: () => setHereOpen(true),
   };
 
   let screen;
@@ -317,6 +320,7 @@ function Workspaced(props: {
               ['today', '今日', '📅'],
               ['lists', 'リスト', '☑'],
               ['interpret', '通訳', '🗣'],
+              ['here', '現在地', '📍'],
               ['history', '履歴', '🗂'],
               ['settings', '設定', '⚙'],
             ] as const
@@ -325,13 +329,14 @@ function Workspaced(props: {
               key={name}
               className={'tab' + (tab === name ? ' active' : '')}
               aria-current={tab === name ? 'page' : undefined}
-              onClick={() => navigate(name === 'lists' ? 'lists/task' : name)}
+              onClick={() => (name === 'here' ? setHereOpen(true) : navigate(name === 'lists' ? 'lists/task' : name))}
             >
               <span aria-hidden>{icon}</span>
               {label}
             </button>
           ))}
         </nav>
+        {hereOpen && <HereSheet onClose={() => setHereOpen(false)} />}
         <div className="toasts" role="status" aria-live="polite">
           {props.toasts.map((t) => (
             <div key={t.id} className={'toast' + (t.kind === 'error' ? ' error' : '')}>
