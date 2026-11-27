@@ -120,7 +120,7 @@ export function ItemDetailScreen(props: { id: string }) {
         label={item.type === 'food' ? '食べた場所（座標）' : item.type === 'place' ? '行った場所（座標）' : '場所（座標）'}
         hint={RECORDS_VISIT(item) ? '「済み」にしたとき、位置情報が許可されていれば自動で入ります' : undefined}
         value={draft.location}
-        onChange={(location) => set({ location })}
+        onChange={(location) => set({ location, locatedAt: location ? new Date().toISOString() : null })}
       />
       <div className="row">
         <Field label="予定日">

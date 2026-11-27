@@ -104,6 +104,8 @@ export interface ChecklistItem extends BaseRecord {
   visibility: Visibility;
   /** 行った・食べた場所（現在地の座標など） */
   location?: string | null;
+  /** 場所を記録した時刻（位置の履歴の並びに使う） */
+  locatedAt?: string | null;
 }
 
 export interface FoodExperience extends BaseRecord {

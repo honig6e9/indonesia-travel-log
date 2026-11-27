@@ -3,13 +3,13 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '../../app/context';
 import { navigate } from '../../app/router';
 import { Empty } from '../../components/ui';
-import { dayLabel, shortDate, weekdayJa } from '../../lib/dates';
+import { dayLabel, shortDate, timeIn, todayIn, weekdayJa } from '../../lib/dates';
 import { formatMoney } from '../../lib/format';
 import { convertIdr, totalsByCurrency } from '../expenses/expenseRepo';
 import { RATING_LABELS } from '../daily/RatingsCard';
-import { allTags, loadTripData, search, summarizeDays, type TripData } from './historyData';
+import { allTags, loadTripData, locationHistory, routeUrl, search, summarizeDays, type LocationEntry, type TripData } from './historyData';
 
-type Tab = 'days' | 'search' | 'stats';
+type Tab = 'days' | 'places' | 'search' | 'stats';
 
 export function HistoryScreen() {
   const { db, trip } = useApp();
@@ -19,10 +19,65 @@ export function HistoryScreen() {
     <div className="screen">
       <div className="segmented">
         <button className={tab === 'days' ? 'on' : ''} onClick={() => setTab('days')}>日付</button>
+        <button className={tab === 'places' ? 'on' : ''} onClick={() => setTab('places')}>📍 位置</button>
         <button className={tab === 'search' ? 'on' : ''} onClick={() => setTab('search')}>検索</button>
         <button className={tab === 'stats' ? 'on' : ''} onClick={() => setTab('stats')}>集計</button>
       </div>
-      {!data ? <p>読み込み中…</p> : tab === 'days' ? <Days data={data} /> : tab === 'search' ? <Search data={data} /> : <Stats data={data} />}
+      {!data ? <p>読み込み中…</p> : tab === 'days' ? <Days data={data} /> : tab === 'places' ? <Places data={data} /> : tab === 'search' ? <Search data={data} /> : <Stats data={data} />}
+    </div>
+  );
+}
+
+const KIND_ICON: Record<LocationEntry['kind'], string> = { note: '📍', expense: '💰', food: '🍜', place: '🏛', task: '☑' };
+
+/** 位置の履歴：場所が入っている記録を、日ごと・時刻の順に並べる */
+function Places({ data }: { data: TripData }) {
+  const { trip } = useApp();
+  const entries = useMemo(() => locationHistory(data, (iso) => todayIn(trip.timeZone, new Date(iso))), [data, trip.timeZone]);
+  const days = useMemo(() => {
+    const m = new Map<string, LocationEntry[]>();
+    for (const e of entries) m.set(e.localDate, [...(m.get(e.localDate) ?? []), e]);
+    return [...m.entries()];
+  }, [entries]);
+  if (days.length === 0)
+    return <Empty>場所が入った記録はまだありません。画面下の「📍 現在地」で記録すると、ここに時間の順で並びます。</Empty>;
+  return (
+    <div className="places">
+      {days.map(([date, list]) => {
+        const dl = dayLabel(date, trip.startDate, trip.endDate);
+        const route = routeUrl(list);
+        return (
+          <section key={date} className="card">
+            <div className="card-head">
+              <h2>
+                {shortDate(date)} {weekdayJa(date).slice(0, 1)}　<span className="muted small">{dl.kind === 'during' ? `DAY ${String(dl.day).padStart(2, '0')}` : dl.label}</span>
+              </h2>
+              {route && (
+                <a className="btn small" href={route} target="_blank" rel="noopener noreferrer">
+                  🗺 地図でたどる
+                </a>
+              )}
+            </div>
+            <ol className="place-list">
+              {list.map((e) => (
+                <li key={e.key}>
+                  <span className="place-time">{e.at ? timeIn(trip.timeZone, e.at) : '--:--'}</span>
+                  <button className="row-btn place-main" onClick={() => navigate(e.go)}>
+                    <span>
+                      {KIND_ICON[e.kind]} {e.label}
+                    </span>
+                    <span className="muted small">{e.location}</span>
+                  </button>
+                  <a className="link small" href={`https://www.google.com/maps/search/?api=1&query=${e.lat},${e.lng}`} target="_blank" rel="noopener noreferrer">
+                    地図
+                  </a>
+                </li>
+              ))}
+            </ol>
+            {list.length > 10 && <p className="muted small">地図でたどるのは最初の 10 地点までです。</p>}
+          </section>
+        );
+      })}
     </div>
   );
 }

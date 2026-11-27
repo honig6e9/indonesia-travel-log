@@ -120,3 +120,72 @@ export function search(d: TripData, keyword: string, tag: string): SearchHit[] {
 export function allTags(d: TripData): string[] {
   return [...new Set([...d.notes.flatMap((n) => n.tags), ...d.answers.flatMap((a) => a.tags), ...d.media.flatMap((m) => m.tags)])].sort();
 }
+
+// ---------- 位置の履歴 ----------
+
+export interface LocationEntry {
+  key: string;
+  /** 記録した時刻（分からなければ null） */
+  at: string | null;
+  localDate: string;
+  kind: 'note' | 'expense' | 'food' | 'place' | 'task';
+  label: string;
+  location: string;
+  lat: number;
+  lng: number;
+  /** 開く画面 */
+  go: string;
+}
+
+const COORD_RE = /(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/;
+
+export function parseCoord(location: string | null | undefined): { lat: number; lng: number } | null {
+  const m = location?.match(COORD_RE);
+  return m ? { lat: Number(m[1]), lng: Number(m[2]) } : null;
+}
+
+/** 場所（座標）が入っている記録を、日ごと・時刻の順に集める（新しい日が先、日の中は時刻の順） */
+export function locationHistory(d: TripData, localDateOf: (iso: string) => string): LocationEntry[] {
+  const out: LocationEntry[] = [];
+  const push = (e: Omit<LocationEntry, 'lat' | 'lng'>) => {
+    const c = parseCoord(e.location);
+    if (c) out.push({ ...e, ...c });
+  };
+  const itemById = new Map(d.items.map((i) => [i.id, i]));
+  for (const n of d.notes) {
+    if (!n.location) continue;
+    // 「📍 現在地（12:30）」の行は時刻と重なるので省き、メモの中身だけを出す
+    const lines = n.body.split('\n').filter(Boolean);
+    const head = !!lines[0] && /^📍 (現在地|場所なし)（\d{1,2}:\d{2}）$/u.test(lines[0]);
+    const label = (head ? lines.slice(1) : lines).join(' ').slice(0, 80) || (head ? '現在地' : 'メモ');
+    push({ key: 'n:' + n.id, at: n.createdAt || null, localDate: n.localDate, kind: 'note', label, location: n.location, go: `day/${n.localDate}` });
+  }
+  for (const e of d.expenses) {
+    if (!e.location) continue;
+    const what = [e.shop, e.category].filter(Boolean).join('・');
+    push({ key: 'x:' + e.id, at: e.createdAt || null, localDate: e.localDate, kind: 'expense', label: `${what || '支出'} ${e.amount.toLocaleString('ja-JP')} ${e.currency}`, location: e.location, go: `day/${e.localDate}` });
+  }
+  const expLocs = new Set<string>();
+  for (const x of d.exps) {
+    if (!x.location) continue;
+    expLocs.add(`${x.checklistItemId}|${x.location}`);
+    const title = itemById.get(x.checklistItemId)?.title ?? '実食';
+    push({ key: 'f:' + x.id, at: x.createdAt || null, localDate: x.localDate, kind: 'food', label: [title, x.shop].filter(Boolean).join(' @ '), location: x.location, go: `item/${x.checklistItemId}` });
+  }
+  for (const i of d.items) {
+    if (!i.location || expLocs.has(`${i.id}|${i.location}`)) continue; // 実食と同じ場所は 1 つにする
+    const at = i.locatedAt ?? null;
+    const localDate = at ? localDateOf(at) : (i.completedDate ?? (i.updatedAt ? localDateOf(i.updatedAt) : ''));
+    if (!localDate) continue;
+    push({ key: 'i:' + i.id, at, localDate, kind: i.type === 'place' ? 'place' : i.type === 'food' ? 'food' : 'task', label: i.title, location: i.location, go: `item/${i.id}` });
+  }
+  return out.sort((a, b) => (a.localDate !== b.localDate ? (a.localDate < b.localDate ? 1 : -1) : (a.at ?? '￿').localeCompare(b.at ?? '￿')));
+}
+
+/** その日の地点を時刻の順にたどる Google マップの経路（地点は 10 個まで） */
+export function routeUrl(entries: LocationEntry[]): string | null {
+  const pts = entries.map((e) => `${e.lat},${e.lng}`).filter((p, i, a) => i === 0 || p !== a[i - 1]);
+  if (pts.length === 0) return null;
+  if (pts.length === 1) return `https://www.google.com/maps/search/?api=1&query=${pts[0]}`;
+  return `https://www.google.com/maps/dir/${pts.slice(0, 10).join('/')}`;
+}

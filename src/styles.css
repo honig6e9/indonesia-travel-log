@@ -388,3 +388,9 @@ p { margin: 6px 0; }
 .here-pos p { margin: 4px 0; }
 .here-voice { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .here-voice audio { flex: 1; min-width: 180px; }
+.place-list { list-style: none; padding: 0; margin: 0; }
+.place-list li { display: grid; grid-template-columns: 3.2em 1fr auto; align-items: center; gap: 6px; border-bottom: 1px solid var(--line); }
+.place-list li:last-child { border-bottom: none; }
+.place-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.9rem; }
+.place-main { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
+.place-main span { overflow-wrap: anywhere; }

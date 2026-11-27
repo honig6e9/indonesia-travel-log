@@ -31,7 +31,7 @@ export async function recordVisitLocation(ctx: Ctx, item: ChecklistItem, get: ()
     const cur = await w.get('checklistItem', item.id);
     if (!cur || cur.deletedAt || cur.status !== 'done') return;
     if (!cur.location) {
-      await w.put('checklistItem', { ...cur, location: loc });
+      await w.put('checklistItem', { ...cur, location: loc, locatedAt: new Date().toISOString() });
       wrote = true;
     }
     if (cur.type === 'food') {

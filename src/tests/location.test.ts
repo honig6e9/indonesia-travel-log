@@ -7,6 +7,7 @@ import { addItems, listItems, setItemStatus } from '../features/checklist/checkl
 import { recordVisitLocation } from '../features/checklist/visitLocation';
 import { firstExperienceId } from '../lib/ids';
 import { mapUrl } from '../lib/geo';
+import { locationHistory, routeUrl, type TripData } from '../features/history/historyData';
 
 let ctx: Ctx;
 let tripId: string;
@@ -52,5 +53,42 @@ describe('行った・食べた場所の記録', () => {
     await setItemStatus(ctx, item, 'open', '2026-12-01');
     expect(await recordVisitLocation(ctx, item, here)).toBeNull();
     expect((await ctx.db.checklistItems.get(item.id))?.location).toBeUndefined();
+  });
+});
+
+
+describe('位置の履歴', () => {
+  const base = { tripId: 't', updatedAt: '', deletedAt: null };
+  const data = {
+    logs: [],
+    answers: [],
+    clips: [],
+    media: [],
+    notes: [
+      { ...base, id: 'n1', localDate: '2026-12-01', createdAt: '2026-12-01T05:00:00Z', body: '📍 現在地（12:00）\nモナス', category: '', tags: [], evidenceType: '', visibility: 'unchecked', location: '-6.175392,106.827153（±12m）' },
+      { ...base, id: 'n2', localDate: '2026-12-01', createdAt: '2026-12-01T02:00:00Z', body: '朝ごはん', category: '', tags: [], evidenceType: '', visibility: 'unchecked', location: '-6.200000,106.800000（±8m）' },
+      { ...base, id: 'n3', localDate: '2026-12-01', createdAt: '2026-12-01T03:00:00Z', body: '場所なし', category: '', tags: [], evidenceType: '', visibility: 'unchecked', location: null },
+    ],
+    expenses: [{ ...base, id: 'x1', localDate: '2026-12-02', createdAt: '2026-12-02T06:00:00Z', amount: 35000, currency: 'IDR', category: '食事', shop: 'Warung A', paymentMethod: '', note: '', kind: 'expense', location: '-6.100000,106.900000（±5m）' }],
+    items: [
+      { ...base, id: 'i1', type: 'food', title: 'Soto', status: 'done', completedDate: '2026-12-02', location: '-6.1,106.9', locatedAt: '2026-12-02T05:00:00Z', createdAt: '', sortOrder: 0 },
+      { ...base, id: 'i2', type: 'place', title: 'Kota Tua', status: 'done', completedDate: '2026-12-02', location: '-6.135,106.813（±9m）', locatedAt: '2026-12-02T08:00:00Z', createdAt: '', sortOrder: 1 },
+    ],
+    exps: [{ ...base, id: 'e1', checklistItemId: 'i1', localDate: '2026-12-02', createdAt: '2026-12-02T05:00:00Z', shop: '', currency: 'IDR', comment: '', visibility: 'unchecked', location: '-6.1,106.9' }],
+  } as unknown as TripData;
+  const localDateOf = (iso: string) => iso.slice(0, 10);
+
+  it('場所のある記録だけを、新しい日から・日の中は時刻の順に並べ、実食と同じ場所の項目は 1 つにする', () => {
+    const h = locationHistory(data, localDateOf);
+    expect(h.map((e) => e.key)).toEqual(['f:e1', 'x:x1', 'i:i2', 'n:n2', 'n:n1']);
+    expect(h[0].label).toBe('Soto');
+    expect(h.find((e) => e.key === 'n:n1')?.label).toBe('モナス');
+  });
+
+  it('その日の地点を時刻の順にたどる地図の経路を作る', () => {
+    const day = locationHistory(data, localDateOf).filter((e) => e.localDate === '2026-12-01');
+    expect(routeUrl(day)).toBe('https://www.google.com/maps/dir/-6.2,106.8/-6.175392,106.827153');
+    expect(routeUrl(day.slice(0, 1))).toBe('https://www.google.com/maps/search/?api=1&query=-6.2,106.8');
+    expect(routeUrl([])).toBeNull();
   });
 });
