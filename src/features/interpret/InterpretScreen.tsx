@@ -28,10 +28,7 @@ import {
 } from './interpretRepo';
 
 const MAX_MS = 60_000;
-/** 録音と音声認識を同時に使えない端末では、音声認識だけで動かす（録音は残らない） */
-const LIVE_ONLY_KEY = 'itl-live-only';
 const LIVE_STATUS_KEY = 'itl-live-status';
-const LIVE_MISS_KEY = 'itl-live-miss';
 /** 高速モードで録音も一緒にするか（同時に使えない端末では off にする） */
 const LIVE_REC_KEY = 'itl-live-rec';
 const LIVE_REC_MISS_KEY = 'itl-live-rec-miss';
@@ -215,17 +212,14 @@ export function InterpretScreen() {
   const liveStopRef = useRef<Promise<string> | null>(null);
   const [liveText, setLiveText] = useState('');
   const vadRef = useRef<(() => void) | null>(null);
-  const [liveStatus, setLiveStatusState] = useState(() => localStorage.getItem(LIVE_STATUS_KEY) ?? '');
-  const [liveOnly, setLiveOnlyState] = useState(() => localStorage.getItem(LIVE_ONLY_KEY) === '1');
+  const [liveStatus, setLiveStatusState] = useState(() => {
+    const v = localStorage.getItem(LIVE_STATUS_KEY) ?? '';
+    // 以前の方式（録音と音声認識を同時に使う）の表示は、いまは当てはまらないので出さない
+    return /^(使え|録音と同時|この端末では音声認識が使えません)/.test(v) ? '' : v;
+  });
   const setLiveStatus = (s: string) => {
     localStorage.setItem(LIVE_STATUS_KEY, s);
     setLiveStatusState(s);
-  };
-  const setLiveOnly = (on: boolean) => {
-    if (on) localStorage.setItem(LIVE_ONLY_KEY, '1');
-    else localStorage.removeItem(LIVE_ONLY_KEY);
-    localStorage.removeItem(LIVE_MISS_KEY);
-    setLiveOnlyState(on);
   };
   const liveTimerRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -450,7 +444,9 @@ export function InterpretScreen() {
     setRecLang(recMode === 'id-ja' ? 'id' : 'ja');
     setError(null);
     setLiveText('');
-    if (liveOnly && speechRecognitionAvailable()) {
+    // 日本語は常にスマホの音声認識で文字にする（高速モード。家の PC の文字起こしを待たない）。
+    // インドネシア語は録音して家の PC の Whisper で文字にする（スマホの聞き取りが働かない端末があるため）
+    if (recMode === 'ja-id' && speechRecognitionAvailable()) {
       stopLiveOnlyRef.current = null;
       if (startLiveOnly(recMode)) return;
     }
@@ -463,20 +459,11 @@ export function InterpretScreen() {
     } catch (e) {
       return setError(micErrorMessage(e));
     }
-    // 話しながら文字にする言語：「尼→日」と Jawab はインドネシア語、それ以外は日本語
+    // 録音の方式では、スマホの音声認識は使わない（録音と取り合って聞き取れない端末があるため）。
+    // 話し終えたかは音の大きさで判断する
     const liveLang: 'ja' | 'id' = recMode === 'id-ja' ? 'id' : 'ja';
     liveStopRef.current = null;
-    // 音声認識で文が確定してから少し続きがなければ、話し終えたとみなして止める
-    let pauseTimer: number | null = null;
-    liveRef.current = startLiveRecognition(
-      liveLang,
-      (text, settled) => {
-        setLiveText(text);
-        if (pauseTimer) window.clearTimeout(pauseTimer);
-        if (settled && text) pauseTimer = window.setTimeout(() => stopRef.current(), RECOGNITION_PAUSE_MS);
-      },
-      () => stopRef.current(),
-    );
+    liveRef.current = null;
     vadRef.current = watchSilence(stream, () => stopRef.current());
     streamRef.current = stream;
     const mr = new MediaRecorder(stream, fmt.mimeType ? { mimeType: fmt.mimeType, audioBitsPerSecond: 64000 } : undefined);
@@ -497,23 +484,6 @@ export function InterpretScreen() {
       const heard = live && !live.failed() ? (await (liveStopRef.current ?? live.stop())).trim() : '';
       liveStopRef.current = null;
       setLiveText('');
-      // 音声認識が使えたかを記録する。録音と同時に使えない端末なら、次から音声認識だけで動かす
-      if (!live) {
-        setLiveStatus('この端末では音声認識が使えません（家の PC で文字にします）');
-      } else if (heard) {
-        setLiveStatus('使えています');
-        localStorage.removeItem(LIVE_MISS_KEY);
-      } else if (blob.size > 0 && durationMs > 1500) {
-        const err = live.error();
-        const misses = Number(localStorage.getItem(LIVE_MISS_KEY) ?? '0') + 1;
-        localStorage.setItem(LIVE_MISS_KEY, String(misses));
-        if (err === 'audio-capture' || err === 'aborted' || misses >= 2) {
-          setLiveOnly(true);
-          setLiveStatus(`録音と同時に使えませんでした（${err ?? '聞き取りなし'}）。次から音声認識だけで動かします`);
-        } else {
-          setLiveStatus(`使えませんでした（${err ?? '聞き取りなし'}）。家の PC で文字にします`);
-        }
-      }
       if (heard) {
         await enqueue({
           id: newId(),
@@ -637,8 +607,8 @@ export function InterpretScreen() {
       {recording && liveText && <p className="live-text">{liveText}</p>}
       {liveStatus && (
         <p className="small muted live-status">
-          高速モード：{liveStatus}
-          {liveOnly && localStorage.getItem(LIVE_REC_KEY) === 'off' && (
+          日本語（高速モード）：{liveStatus}
+          {localStorage.getItem(LIVE_REC_KEY) === 'off' && (
             <button
               className="link"
               onClick={() => {
@@ -648,11 +618,6 @@ export function InterpretScreen() {
               }}
             >
               録音も試す
-            </button>
-          )}
-          {liveOnly && (
-            <button className="link" onClick={() => setLiveOnly(false)}>
-              録音を先にする方式に戻す
             </button>
           )}
         </p>
