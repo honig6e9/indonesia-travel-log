@@ -573,8 +573,10 @@ export function InterpretScreen() {
     const t = text.trim();
     if (!t) return;
     setText('');
-    speakerRef.current = 'me';
-    await enqueue({ id: newId(), createdAt: new Date().toISOString(), mode, inputText: t, sourceText: t, status: 'local', via: 'pc' });
+    // 手入力は文の言語で向きを決める：インドネシア語なら相手の文として日本語訳を、日本語なら自分の文としてインドネシア語訳を出す
+    const lang = guessLang(t);
+    speakerRef.current = lang === 'id' ? 'them' : 'me';
+    await enqueue({ id: newId(), createdAt: new Date().toISOString(), mode: lang === 'id' ? 'id-ja' : 'ja-id', inputText: t, sourceText: t, status: 'local', via: 'pc' });
   };
 
   // 全画面は、履歴の最新の内容（速い訳 → 高精度の訳の差し替え）を映す
