@@ -106,6 +106,8 @@ export interface ChecklistItem extends BaseRecord {
   location?: string | null;
   /** 場所を記録した時刻（位置の履歴の並びに使う） */
   locatedAt?: string | null;
+  /** 関連するページ（公式サイト・地図・記事など。http・https だけ） */
+  urls?: string[] | null;
 }
 
 export interface FoodExperience extends BaseRecord {

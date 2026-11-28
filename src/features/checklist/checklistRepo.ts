@@ -1,5 +1,6 @@
 import type { TravelDB } from '../../db/db';
 import { alive, transact, type Ctx } from '../../db/repo';
+import { safeHttpUrl } from '../../lib/url';
 import type { ChecklistItem, ChecklistType, Currency, Expense, FoodExperience, Priority } from '../../db/types';
 import { experienceExpenseId, firstExperienceId, newId } from '../../lib/ids';
 
@@ -273,6 +274,7 @@ export interface ImportItem {
   status?: ChecklistItem['status'];
   note?: string;
   targetPrice?: number | null;
+  urls?: string[];
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -315,6 +317,7 @@ export function parseImportFile(text: string): { items: ImportItem[]; errors: st
       status: (r.status as ChecklistItem['status'] | undefined) ?? 'open',
       note: str(r.note, 4000),
       targetPrice: price,
+      urls: cleanUrls(r.urls),
     });
   });
   return { items, errors };
@@ -344,7 +347,40 @@ export async function importItems(ctx: Ctx, tripId: string, items: ImportItem[])
         status: it.status ?? 'open',
         note: it.note ?? '',
         targetPrice: it.targetPrice ?? null,
+        urls: it.urls?.length ? it.urls : null,
       });
     }
   });
+}
+
+/** リンクをそろえる：http・https だけ、重複なし、20 件まで */
+export function cleanUrls(urls: unknown): string[] {
+  if (!Array.isArray(urls)) return [];
+  const out: string[] = [];
+  for (const u of urls) {
+    const s = typeof u === 'string' ? safeHttpUrl(u) : null;
+    if (s && !out.includes(s)) out.push(s);
+  }
+  return out.slice(0, 20);
+}
+
+/** 同じ名前の既存の項目に、取り込むファイルのリンクを足す（項目は増やさない）。足した項目の数を返す */
+export async function addUrlsToExisting(ctx: Ctx, items: ImportItem[], existing: ChecklistItem[]): Promise<number> {
+  let n = 0;
+  await transact(ctx, async (w) => {
+    for (const it of items) {
+      if (!it.urls?.length) continue;
+      const key = norm(it.title);
+      for (const e of existing.filter((x) => x.type === it.type && (norm(x.title) === key || (!!x.localName && norm(x.localName) === key)))) {
+        const cur = await w.get('checklistItem', e.id);
+        if (!cur || cur.deletedAt) continue;
+        const merged = cleanUrls([...(cur.urls ?? []), ...it.urls]);
+        if (merged.length !== (cur.urls ?? []).length) {
+          await w.put('checklistItem', { ...cur, urls: merged });
+          n++;
+        }
+      }
+    }
+  });
+  return n;
 }

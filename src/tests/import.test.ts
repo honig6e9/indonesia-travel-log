@@ -36,3 +36,25 @@ describe('リストのファイル取り込み', () => {
     expect(parseImportFile('{oops').errors[0]).toMatch(/JSON/);
   });
 });
+
+describe('リンクの取り込み', () => {
+  it('http・https だけを残し、すでにある項目にはリンクだけを足す（2 回目は増えない）', async () => {
+    const { TravelDB } = await import('../db/db');
+    const { createTrip } = await import('../features/daily/tripRepo');
+    const { addItems, listItems, parseImportFile, addUrlsToExisting } = await import('../features/checklist/checklistRepo');
+    const db = new TravelDB('import-links');
+    const ctx = { db, ownerId: null };
+    const trip = await createTrip(ctx);
+    await addItems(ctx, trip.id, 'food', ['Kopi Es Tak Kie']);
+    const parsed = parseImportFile(
+      JSON.stringify({ items: [{ type: 'food', title: 'Kopi Es Tak Kie', urls: ['https://www.instagram.com/kopiestakkieglodok/', 'javascript:alert(1)', 'intent://x', 'https://www.instagram.com/kopiestakkieglodok/'] }] }),
+    );
+    expect(parsed.items[0].urls).toEqual(['https://www.instagram.com/kopiestakkieglodok/']);
+    const existing = await listItems(db, trip.id, 'food');
+    expect(await addUrlsToExisting(ctx, parsed.items, existing)).toBe(1);
+    expect(await addUrlsToExisting(ctx, parsed.items, await listItems(db, trip.id, 'food'))).toBe(0);
+    const after = await listItems(db, trip.id, 'food');
+    expect(after).toHaveLength(1);
+    expect(after[0].urls).toEqual(['https://www.instagram.com/kopiestakkieglodok/']);
+  });
+});

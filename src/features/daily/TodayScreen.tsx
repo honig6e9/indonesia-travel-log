@@ -265,6 +265,7 @@ export function CheckRow(props: { item: ChecklistItem; onToggle: (i: ChecklistIt
               period && !overdue && `予定 ${formatPeriod(period)}`,
               i.completedDate && `完了 ${i.completedDate}`,
               i.location && '📍',
+              i.urls?.length && `🔗${i.urls.length}`,
               i.priority === 'high' && '優先度:高',
               i.status === 'skipped' && '見送り',
             ]

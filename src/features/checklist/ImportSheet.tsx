@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../../app/context';
 import { Sheet } from '../../components/ui';
 import type { ChecklistItem } from '../../db/types';
-import { importItems, isDuplicate, type ImportItem } from './checklistRepo';
+import { addUrlsToExisting, importItems, isDuplicate, type ImportItem } from './checklistRepo';
 
 /** 取り込み用ファイルの中身を確かめてから、やること・食べたいものに入れる */
 export function ImportSheet(props: { items: ImportItem[]; errors: string[]; existing: ChecklistItem[]; onClose: () => void }) {
@@ -11,6 +11,8 @@ export function ImportSheet(props: { items: ImportItem[]; errors: string[]; exis
   const [busy, setBusy] = useState(false);
   const dups = props.items.filter((i) => isDuplicate(i, props.existing));
   const toAdd = skipDup ? props.items.filter((i) => !isDuplicate(i, props.existing)) : props.items;
+  // すでにある項目には、ファイルのリンクだけを足す
+  const linkable = dups.filter((i) => i.urls?.length).length;
   const tasks = toAdd.filter((i) => i.type === 'task');
   const foods = toAdd.filter((i) => i.type === 'food');
   return (
@@ -20,12 +22,17 @@ export function ImportSheet(props: { items: ImportItem[]; errors: string[]; exis
       footer={
         <button
           className="btn primary"
-          disabled={busy || toAdd.length === 0}
+          disabled={busy || (toAdd.length === 0 && linkable === 0)}
           onClick={async () => {
             setBusy(true);
             try {
               await importItems(ctx, trip.id, toAdd);
-              toast(`やること ${tasks.length} 件、食べたいもの ${foods.length} 件を取り込みました`);
+              const linked = skipDup && linkable ? await addUrlsToExisting(ctx, dups, props.existing) : 0;
+              toast(
+                [toAdd.length && `やること ${tasks.length} 件、食べたいもの ${foods.length} 件を取り込みました`, linked && `すでにある ${linked} 件にリンクを足しました`]
+                  .filter(Boolean)
+                  .join('。') || '足すものはありませんでした',
+              );
               props.onClose();
             } catch (e) {
               toast('取り込めませんでした：' + (e as Error).message, { kind: 'error' });
@@ -34,7 +41,7 @@ export function ImportSheet(props: { items: ImportItem[]; errors: string[]; exis
             }
           }}
         >
-          {busy ? '取り込み中…' : `${toAdd.length} 件を取り込む`}
+          {busy ? '取り込み中…' : [toAdd.length && `${toAdd.length} 件を取り込む`, skipDup && linkable && `${linkable} 件にリンクを足す`].filter(Boolean).join('・') || '取り込むものはありません'}
         </button>
       }
     >

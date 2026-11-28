@@ -394,3 +394,6 @@ p { margin: 6px 0; }
 .place-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.9rem; }
 .place-main { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
 .place-main span { overflow-wrap: anywhere; }
+.link-list { list-style: none; padding: 0; margin: 0 0 6px; display: grid; gap: 4px; }
+.link-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.link-list a { overflow-wrap: anywhere; }

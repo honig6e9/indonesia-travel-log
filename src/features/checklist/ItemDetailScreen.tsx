@@ -4,6 +4,7 @@ import { useApp } from '../../app/context';
 import { navigate } from '../../app/router';
 import { Empty, Field, Sheet, Stars, Thumb, VisibilitySelect, numOrNull } from '../../components/ui';
 import { LocationField } from '../../components/LocationField';
+import { safeHttpUrl } from '../../lib/url';
 import { NoteSheet } from '../notes/NoteSheet';
 import { notesLinkedTo } from '../notes/notesRepo';
 import { recordVisitLocation, RECORDS_VISIT } from './visitLocation';
@@ -120,6 +121,7 @@ export function ItemDetailScreen(props: { id: string }) {
       <Field label={TYPE_TEXT[item.type].area}>
         <input value={draft.area} onChange={(e) => set({ area: e.target.value })} />
       </Field>
+      <LinksField urls={draft.urls ?? []} onChange={(urls) => set({ urls: urls.length ? urls : null })} />
       <LocationField
         label={item.type === 'food' ? '食べた場所（座標）' : item.type === 'place' ? '行った場所（座標）' : '場所（座標）'}
         hint={RECORDS_VISIT(item) ? '「済み」にしたとき、位置情報が許可されていれば自動で入ります' : undefined}
@@ -333,5 +335,50 @@ function ExperienceSheet(props: { item: ChecklistItem; exp: FoodExperience; onCl
       {linkedExpense && <p className="muted small">紐づく支出：{formatMoney(linkedExpense.amount, linkedExpense.currency)}（二重には登録しません）</p>}
       <VisibilitySelect value={e.visibility} onChange={(visibility) => update({ visibility })} />
     </Sheet>
+  );
+}
+
+/** リンク（公式サイト・地図・記事など）。押すと開く。http・https だけ */
+function LinksField(props: { urls: string[]; onChange: (urls: string[]) => void }) {
+  const { toast } = useApp();
+  const [input, setInput] = useState('');
+  const label = (u: string) => {
+    try {
+      const x = new URL(u);
+      const q = x.searchParams.get('query') ?? x.searchParams.get('textToSearch');
+      return x.hostname.replace(/^www\./, '') + (q ? `：${q}` : x.pathname.length > 1 ? decodeURIComponent(x.pathname).slice(0, 40) : '');
+    } catch {
+      return u;
+    }
+  };
+  const add = () => {
+    const u = safeHttpUrl(input);
+    if (!u) return toast('http:// か https:// で始まる URL を入れてください', { kind: 'error' });
+    if (!props.urls.includes(u)) props.onChange([...props.urls, u]);
+    setInput('');
+  };
+  return (
+    <Field label="リンク">
+      {props.urls.length > 0 && (
+        <ul className="link-list">
+          {props.urls.map((u) => (
+            <li key={u}>
+              <a className="link" href={safeHttpUrl(u) ?? undefined} target="_blank" rel="noopener noreferrer">
+                🔗 {label(u)}
+              </a>
+              <button type="button" className="link" aria-label="リンクを外す" onClick={() => props.onChange(props.urls.filter((x) => x !== u))}>
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="add-row">
+        <input type="url" inputMode="url" value={input} onChange={(e) => setInput(e.target.value)} placeholder="https://" aria-label="リンクを足す" />
+        <button type="button" className="btn" onClick={add}>
+          追加
+        </button>
+      </div>
+    </Field>
   );
 }

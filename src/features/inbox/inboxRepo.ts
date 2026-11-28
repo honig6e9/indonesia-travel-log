@@ -297,6 +297,7 @@ export async function convertInbox(ctx: Ctx, item: InboxItem, targets: ConvertTa
           plannedDate: t.plannedDate ?? null,
           priority: t.priority ?? 'normal',
           note: joinMemo(t.memo, block),
+          urls: item.sourceUrl && /^https?:\/\//i.test(item.sourceUrl) ? [item.sourceUrl] : null,
         };
         await w.put('checklistItem', rec);
         target = { type: 'checklistItem', id: rec.id };
