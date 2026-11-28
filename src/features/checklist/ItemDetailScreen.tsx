@@ -4,9 +4,11 @@ import { useApp } from '../../app/context';
 import { navigate } from '../../app/router';
 import { Empty, Field, Sheet, Stars, Thumb, VisibilitySelect, numOrNull } from '../../components/ui';
 import { LocationField } from '../../components/LocationField';
+import { NoteSheet } from '../notes/NoteSheet';
+import { notesLinkedTo } from '../notes/notesRepo';
 import { recordVisitLocation, RECORDS_VISIT } from './visitLocation';
 import { alive } from '../../db/repo';
-import type { ChecklistItem, Currency, FoodExperience, Media, Priority } from '../../db/types';
+import type { ChecklistItem, Currency, FoodExperience, Media, Priority, Note } from '../../db/types';
 import { formatMoney } from '../../lib/format';
 import { periodOf } from './period';
 import { MediaSheet } from '../media/MediaSheet';
@@ -35,6 +37,8 @@ export function ItemDetailScreen(props: { id: string }) {
   const [draft, setDraft] = useState<ChecklistItem | null>(null);
   const [expSheet, setExpSheet] = useState<FoodExperience | null>(null);
   const [mediaSheet, setMediaSheet] = useState<Media | null>(null);
+  const linkedNotes = useLiveQuery(() => notesLinkedTo(db, props.id), [db, props.id]) ?? [];
+  const [noteSheet, setNoteSheet] = useState<{ note?: Note } | null>(null);
   const inboxSrc = useLiveQuery(() => inboxSourceOf(db, props.id), [db, props.id]);
 
   // 保存済みの版が変わったら取り込む。編集中の欄は残し、状態（チェック）だけ最新にする
@@ -156,6 +160,30 @@ export function ItemDetailScreen(props: { id: string }) {
 
       <section className="card">
         <div className="card-head">
+          <h2>メモ</h2>
+          <button className="btn small" onClick={() => setNoteSheet({})}>＋メモを書く</button>
+        </div>
+        {linkedNotes.length ? (
+          <ul className="list">
+            {linkedNotes.map((n) => (
+              <li key={n.id}>
+                <button className="row-btn" onClick={() => setNoteSheet({ note: n })}>
+                  <span className="muted small">
+                    {n.localDate} {n.category}
+                    {n.location && ' 📍'}
+                  </span>
+                  <span className="clamp">{n.body}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted small">この項目に結んだメモはまだありません。</p>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="card-head">
           <h2>写真</h2>
           <PhotoButton date={item.completedDate ?? date} linkTo={{ type: 'checklistItem', id: item.id }} className="btn small" label="＋写真" />
         </div>
@@ -214,6 +242,7 @@ export function ItemDetailScreen(props: { id: string }) {
 
       {expSheet && <ExperienceSheet item={item} exp={expSheet} onClose={() => setExpSheet(null)} />}
       {mediaSheet && <MediaSheet media={mediaSheet} onClose={() => setMediaSheet(null)} />}
+      {noteSheet && <NoteSheet note={noteSheet.note} date={date} linkTo={item.id} onClose={() => setNoteSheet(null)} />}
     </div>
   );
 }
