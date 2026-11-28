@@ -8,6 +8,7 @@ import { timeIn, todayIn } from '../../lib/dates';
 import { categoriesFor } from '../checklist/checklistRepo';
 import { googleTranslateUrl } from '../interpret/interpretRepo';
 import { MediaSheet } from '../media/MediaSheet';
+import { safeHttpUrl } from '../../lib/url';
 import { inboxTranslationState, needsTranslation, requestInboxTranslation } from './inboxTranslate';
 import { PhotoButton } from '../media/PhotoButton';
 import {
@@ -129,8 +130,8 @@ export function InboxDetailScreen(props: { id: string }) {
       <Field label="元の URL">
         <input type="url" value={draft.sourceUrl} onChange={(e) => set({ sourceUrl: e.target.value })} />
       </Field>
-      {item.sourceUrl && (
-        <a className="link small" href={item.sourceUrl} target="_blank" rel="noreferrer">
+      {safeHttpUrl(item.sourceUrl) && (
+        <a className="link small" href={safeHttpUrl(item.sourceUrl)!} target="_blank" rel="noopener noreferrer">
           元のページを開く
         </a>
       )}

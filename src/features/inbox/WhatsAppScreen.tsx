@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useApp } from '../../app/context';
 import { navigate } from '../../app/router';
 import { Empty, Field } from '../../components/ui';
+import { safeHttpUrl } from '../../lib/url';
 import { TARGET_LABEL } from './inboxRepo';
 import {
   importerUrl,
@@ -503,8 +504,8 @@ export function WhatsAppScreen() {
                         .join('・')}
                     </p>
                     {c.translation_ja && <p className="muted small">訳：{c.translation_ja}</p>}
-                    {c.url && (
-                      <a className="link small" href={c.url} target="_blank" rel="noreferrer">
+                    {safeHttpUrl(c.url) && (
+                      <a className="link small" href={safeHttpUrl(c.url)!} target="_blank" rel="noopener noreferrer">
                         {c.url}
                       </a>
                     )}

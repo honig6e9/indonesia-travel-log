@@ -26,7 +26,9 @@ const done = (over: Partial<Interpretation>): Interpretation => ({
 
 describe('過去の訳の使い回し', () => {
   it('空白・大文字小文字・文末の句読点が違っても同じ文とみなす', () => {
-    expect(normalizeSource('  Kalau ke  BANDUNG, kamu harus coba batagor ! ')).toBe(normalizeSource('Kalau ke Bandung, kamu harus coba batagor.'));
+    expect(normalizeSource('  Kalau ke  BANDUNG, kamu harus coba batagor 。 ')).toBe(normalizeSource('Kalau ke Bandung, kamu harus coba batagor.'));
+    // 疑問と平叙は別の文（Sudah makan? と Sudah makan.）
+    expect(normalizeSource('Sudah makan?')).not.toBe(normalizeSource('Sudah makan.'));
   });
 
   it('同じ向きの訳だけを使い、手で直した訳を優先する', async () => {
@@ -88,5 +90,17 @@ describe('未整理ボックスの翻訳待ち', () => {
     expect((await db.inboxItems.get(manual.id))?.translatedText).toBe('辛くしないでね');
     expect((await inboxTranslationState(db, id1.id)).state).toBe('done');
     expect(await applyInboxTranslations(ctx)).toBe(0); // 入れ終えたものはもう触らない
+  });
+});
+
+describe('ほかの端末の履歴の取り込み', () => {
+  it('未整理ボックスの原文と一致する依頼は、通訳の履歴に出さない印を付ける', async () => {
+    const { pullHistory } = await import('../features/interpret/interpretRepo');
+    await db.inboxItems.put({ id: 'ib1', tripId: 't', createdAt: '', updatedAt: '', sourceType: 'clipboard', sourceTitle: '', sourceText: 'Jangan pedas, ya.', sourceUrl: '', translatedText: '', status: 'pending', title: 'x', memo: '', category: '', area: '', priority: 'normal', urlKey: '', textHash: '' });
+    const row = (id: string, text: string) => ({ id, created_at: '2026-12-01T00:00:00Z', mode: 'id-ja', audio_path: null, input_text: text, status: 'done', source_lang: 'id', source_text: text, target_lang: 'ja', target_text: '訳', reading: '', provider: 'codex', error: null });
+    const sb = { from: () => ({ select: () => ({ order: () => ({ limit: async () => ({ data: [row('j1', 'Jangan pedas, ya.'), row('j2', 'Apa kabar?')], error: null }) }) }) }) } as unknown as SupabaseClient;
+    await pullHistory(db, sb);
+    expect((await db.interpretations.get('j1'))?.inboxId).toBe('ib1');
+    expect((await db.interpretations.get('j2'))?.inboxId).toBeUndefined();
   });
 });

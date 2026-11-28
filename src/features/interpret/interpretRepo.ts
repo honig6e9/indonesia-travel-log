@@ -125,13 +125,13 @@ export async function refresh(db: TravelDB, sb: SupabaseClient, ids?: string[]) 
   });
 }
 
-/** 比べるための文：全角半角・大文字小文字・空白・文末の句読点をそろえる */
+/** 比べるための文：全角半角・大文字小文字・空白・文末の句点をそろえる（「?」「!」は意味が変わるので残す） */
 export function normalizeSource(s: string): string {
   return s
     .normalize('NFKC')
     .toLowerCase()
     .replace(/\s+/g, ' ')
-    .replace(/[\s。．.!！?？、,]+$/u, '')
+    .replace(/[\s。．.、,]+$/u, '')
     .trim();
 }
 
@@ -157,12 +157,15 @@ export async function fixTranslation(db: TravelDB, id: string, text: string) {
 export async function pullHistory(db: TravelDB, sb: SupabaseClient) {
   const { data, error } = await sb.from('interpret_jobs').select('*').order('created_at', { ascending: false }).limit(100);
   if (error) throw error;
-  await db.transaction('rw', db.interpretations, async () => {
+  await db.transaction('rw', [db.interpretations, db.inboxItems], async () => {
     for (const j of (data ?? []) as JobRow[]) {
       const cur = await db.interpretations.get(j.id);
       if (cur) {
         if (cur.via !== 'google' && cur.status !== 'done') await db.interpretations.update(j.id, fromJob(j));
       } else {
+        // ほかの端末で頼んだ未整理ボックスの翻訳は、通訳の履歴に出さない（原文が一致するもの）
+        const text = j.input_text?.trim();
+        const inbox = text && !j.audio_path ? await db.inboxItems.filter((x) => !x.deletedAt && x.sourceText.trim().slice(0, 2000) === text).first() : undefined;
         await db.interpretations.put({
           id: j.id,
           createdAt: j.created_at,
@@ -172,6 +175,7 @@ export async function pullHistory(db: TravelDB, sb: SupabaseClient) {
           via: 'pc',
           ...fromJob(j),
           status: j.status,
+          ...(inbox ? { inboxId: inbox.id, inboxDone: true } : {}),
         });
       }
     }

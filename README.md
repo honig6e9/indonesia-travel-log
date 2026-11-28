@@ -268,7 +268,7 @@ PC に保存した WhatsApp の会話ログ（WhatsApp 保存ツールの `messa
 
 ## テスト
 
-`npm test` で 68 件の自動テストが動きます（Vitest）。WhatsApp の取り込みプログラムのテストは `python -m unittest worker/test_whatsapp_importer.py` で動きます（8 件）。
+`npm test` で 75 件の自動テストが動きます（Vitest）。WhatsApp の取り込みプログラムのテストは `python -m unittest worker/test_whatsapp_importer.py` で動きます（8 件）。
 
 - `supabase/tests/rls.test.ts`：本物のマイグレーション SQL を PGlite（WASM の Postgres）に流し、本人・別ユーザー・匿名の読み書き、RPC の検証、冪等性、Storage のポリシーを確かめます（Supabase の auth / storage は最小限の模造です）。
 - `src/tests/sync.test.ts`：2 台の端末（別々の IndexedDB）と PGlite のサーバーで、双方向同期・オフラインからの復帰・同じ日の重複防止・競合・自動マージ・二重登録の防止・応答が失われたときの再送・別アカウントのキュー・大きすぎるファイル・再起動後の保持を確かめます。
